@@ -17,7 +17,8 @@ from pathlib import Path
 
 import pdfplumber
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Border, Color, Font, PatternFill, Side
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.worksheet.table import Table, TableStyleInfo
 
 # Coordenadas (en puntos) de las columnas de la tabla "DETALLE DE ITEMS"
 # del formulario F.41. Son fijas porque el formulario es una plantilla
@@ -143,7 +144,8 @@ FMT_MONEDA_ARS = r'_-[$$-2C0A]\ * #,##0.00_-;\-[$$-2C0A]\ * #,##0.00_-;_-[$$-2C0
 def escribir_notas_pedido(filas: list, encabezado: dict, salida: Path):
     wb = Workbook()
     ws = wb.active
-    ws.title = "NOTA DE PEDIDO"
+    slug = expediente_slug(encabezado["expediente"])
+    ws.title = f"NOTA DE PEDIDO {slug}"[:31]
 
     hoy = date.today().strftime("%d/%m/%y")
     hora_fmt = encabezado["hora"].replace(":", ",") + " HS"
@@ -155,16 +157,14 @@ def escribir_notas_pedido(filas: list, encabezado: dict, salida: Path):
     fuente_titulo = Font(name="ITC Zapf Chancery", bold=True, size=36)
     fuente_membrete = Font(name="Book Antiqua", bold=True, size=10)
     fuente_pedido = Font(name="Courier New", bold=True, size=16)
-    fuente_encabezado_tabla = Font(name="Arial", bold=True, size=10)
     fuente_nota = Font(name="Arial", size=11)
     fuente_total = Font(name="Arial", bold=True, size=11)
 
     centrado = Alignment(horizontal="center")
     centrado_wrap = Alignment(horizontal="center", wrap_text=True)
-    borde_fino = Border(*(Side(style="thin"),) * 4)
+    centrado_medio = Alignment(horizontal="center", vertical="center")
     borde_medio = Border(*(Side(style="medium"),) * 4)
-    relleno_amarillo = PatternFill("solid", fgColor="FFFF00")
-    relleno_encabezado = PatternFill("solid", fgColor=Color(theme=6, tint=0.5999938962981048))
+    relleno_blanco = PatternFill("solid", fgColor="FFFFFF")
 
     ws.merge_cells("A1:E1")
     ws["A1"] = "Zeid Medical S.R.L"
@@ -202,39 +202,46 @@ def escribir_notas_pedido(filas: list, encabezado: dict, salida: Path):
     ws["A5"] = linea_pedido
     ws["A5"].font = fuente_pedido
     ws["A5"].alignment = centrado
-    ws["A5"].fill = relleno_amarillo
+    ws["A5"].fill = relleno_blanco
     ws["A5"].border = borde_medio
     ws.row_dimensions[5].height = 21.4
 
-    ws.merge_cells("A6:A7")
-    ws.merge_cells("E6:E7")
+    # Encabezado de la tabla en una única fila (antes "Reng" e "Importe
+    # total" ocupaban 2 filas combinadas mientras el resto sólo 1, dejando
+    # un hueco sin estilo debajo de Descripción/Cantidad/Precio).
     encabezados_tabla = ["Reng", "Descripción", "Cantidad", "Precio", "Importe total"]
     for col, titulo in enumerate(encabezados_tabla, start=1):
         c = ws.cell(row=6, column=col, value=titulo)
-        c.font = fuente_encabezado_tabla
-        c.alignment = centrado_wrap if col == 2 else centrado
-        c.fill = relleno_encabezado
-    ws.row_dimensions[6].height = 13.9
-    ws.row_dimensions[7].height = 13.9
+        c.alignment = centrado_wrap if col == 2 else centrado_medio
+    ws.row_dimensions[6].height = 18
 
-    fila = 8
+    fila = 7
     primera_fila_datos = fila
     for item in filas:
         c_reng = ws.cell(row=fila, column=1, value=item["rg"])
-        c_reng.border = borde_fino
         c_reng.alignment = centrado
         ws.cell(row=fila, column=2, value=item["descripcion"])
         c_cant = ws.cell(row=fila, column=3, value=item["cantidad"])
-        c_cant.border = borde_fino
         c_cant.alignment = centrado
         c_precio = ws.cell(row=fila, column=4)
-        c_precio.border = borde_fino
         c_precio.number_format = FMT_MONEDA
         c_importe = ws.cell(row=fila, column=5, value=f"=C{fila}*D{fila}")
-        c_importe.border = borde_fino
         c_importe.number_format = FMT_MONEDA
         fila += 1
     ultima_fila_datos = fila - 1
+
+    tabla = Table(
+        displayName=f"TablaNotaPedido_{slug.replace('-', '_')}",
+        ref=f"A6:E{ultima_fila_datos}",
+    )
+    tabla.tableStyleInfo = TableStyleInfo(
+        name="TableStyleMedium9",
+        showRowStripes=True,
+        showFirstColumn=False,
+        showLastColumn=False,
+        showColumnStripes=False,
+    )
+    ws.add_table(tabla)
 
     c_nota = ws.cell(
         row=fila, column=2, value="NOTA : COTIZAR LOS PRODUCTOS QUE TENGAN VENCIMIENTO MAYOR A 12 MESES"
