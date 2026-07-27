@@ -54,8 +54,21 @@ def extraer_filas_pagina(page):
 
         rg_palabras = [w for w in en_banda if w["x0"] < COL_RG_MAX]
         codigo_palabras = [w for w in en_banda if COL_RG_MAX <= w["x0"] < COL_CODIGO_MAX]
-        desc_palabras = [w for w in en_banda if COL_CODIGO_MAX <= w["x0"] < COL_DESC_MAX]
-        cant_palabras = [w for w in en_banda if COL_DESC_MAX <= w["x0"] < COL_CANT_MAX]
+        # La columna "Cantidad" está alineada a la derecha, así que un
+        # número largo (ej. "152064") puede empezar (x0) antes del límite
+        # de la columna de Descripción aunque termine (x1) bien adentro de
+        # la columna de Cantidad. Por eso esta columna se distingue por su
+        # borde derecho (x1) y no por el izquierdo (x0).
+        desc_palabras = [
+            w
+            for w in en_banda
+            if COL_CODIGO_MAX <= w["x0"] < COL_DESC_MAX and w["x1"] <= COL_DESC_MAX
+        ]
+        cant_palabras = [
+            w
+            for w in en_banda
+            if w["x0"] >= COL_CODIGO_MAX and COL_DESC_MAX < w["x1"] <= COL_CANT_MAX
+        ]
 
         rg_texto = "".join(w["text"] for w in rg_palabras)
         if not rg_texto.isdigit():
