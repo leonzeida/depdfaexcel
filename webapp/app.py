@@ -6,16 +6,23 @@ internet ni instalar nada mas: usa el mismo motor de extraccion que
 f41_a_excel.py.
 """
 
+import base64
 import sys
 import tempfile
 import threading
 import webbrowser
 from pathlib import Path
 
-from flask import Flask, jsonify, render_template, request, send_file
+from flask import Flask, jsonify, render_template, request
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from f41_a_excel import extraer_pdf, escribir_excel  # noqa: E402
+from f41_a_excel import (  # noqa: E402
+    escribir_notas_pedido,
+    escribir_planilla_trabajo,
+    expediente_slug,
+    extraer_encabezado,
+    extraer_pdf,
+)
 
 app = Flask(__name__)
 PUERTO = 5000
@@ -41,6 +48,7 @@ def convertir():
 
         try:
             filas = extraer_pdf(pdf_path)
+            encabezado = extraer_encabezado(pdf_path)
         except Exception:
             return jsonify(
                 error="No se pudo leer ese PDF. Revisá que sea un Pedido de Cotización F.41 válido."
@@ -49,15 +57,21 @@ def convertir():
         if not filas:
             return jsonify(error="No se encontraron items en la tabla de ese PDF."), 400
 
-        salida = pdf_path.with_suffix(".xlsx")
-        escribir_excel(filas, salida)
+        slug = expediente_slug(encabezado["expediente"])
+        salida_np = Path(tmp) / f"Nota de Pedido {slug}.xlsx"
+        salida_pt = Path(tmp) / f"Planilla de Trabajo {slug}.xlsx"
+        escribir_notas_pedido(filas, encabezado, salida_np)
+        escribir_planilla_trabajo(filas, encabezado, salida_pt)
 
-        return send_file(
-            salida,
-            as_attachment=True,
-            download_name=salida.name,
-            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
+        archivos = []
+        for etiqueta, ruta in (
+            ("Nota de Pedido", salida_np),
+            ("Planilla de Trabajo", salida_pt),
+        ):
+            datos = base64.b64encode(ruta.read_bytes()).decode("ascii")
+            archivos.append({"etiqueta": etiqueta, "nombre": ruta.name, "datos": datos})
+
+        return jsonify(archivos=archivos)
 
 
 def abrir_navegador():

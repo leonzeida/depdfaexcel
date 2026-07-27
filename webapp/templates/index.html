@@ -108,6 +108,25 @@
     color: #5a6b8c;
     font-size: 15px;
   }
+  #resultados {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 16px;
+  }
+  .boton-descarga {
+    display: block;
+    text-align: center;
+    padding: 14px;
+    font-size: 16px;
+    font-weight: 600;
+    color: #fff;
+    background: #2fa76a;
+    border-radius: 12px;
+    text-decoration: none;
+    transition: background 0.15s;
+  }
+  .boton-descarga:hover { background: #248a56; }
   @media (prefers-color-scheme: dark) {
     body { background: #10131a; }
     .tarjeta { background: #1b2030; box-shadow: none; }
@@ -141,6 +160,7 @@
       <button type="submit" id="boton" disabled>Convertir a Excel</button>
     </form>
     <div id="cargando">Convirtiendo, un momento…</div>
+    <div id="resultados"></div>
   </div>
 
 <script>
@@ -151,6 +171,7 @@
   const formulario = document.getElementById('formulario');
   const cargando = document.getElementById('cargando');
   const mensaje = document.getElementById('mensaje');
+  const resultados = document.getElementById('resultados');
 
   function mostrarArchivo(file) {
     if (!file) return;
@@ -199,9 +220,17 @@
     }
   });
 
+  function base64AArchivo(base64, tipoMime) {
+    const binario = atob(base64);
+    const bytes = new Uint8Array(binario.length);
+    for (let i = 0; i < binario.length; i++) bytes[i] = binario.charCodeAt(i);
+    return new Blob([bytes], { type: tipoMime });
+  }
+
   formulario.addEventListener('submit', async (e) => {
     e.preventDefault();
     ocultarMensaje();
+    resultados.innerHTML = '';
     boton.disabled = true;
     boton.textContent = 'Convirtiendo…';
     cargando.style.display = 'block';
@@ -209,9 +238,9 @@
     try {
       const datos = new FormData(formulario);
       const respuesta = await fetch('/convertir', { method: 'POST', body: datos });
+      const cuerpo = await respuesta.json().catch(() => ({}));
 
       if (!respuesta.ok) {
-        const cuerpo = await respuesta.json().catch(() => ({}));
         mostrarMensaje(cuerpo.error || 'Ocurrió un error al convertir el archivo.', 'error');
         boton.disabled = false;
         boton.textContent = 'Convertir a Excel';
@@ -219,22 +248,23 @@
         return;
       }
 
-      const disposicion = respuesta.headers.get('Content-Disposition') || '';
-      const coincidencia = disposicion.match(/filename="?([^"]+)"?/);
-      const nombreArchivo = coincidencia ? coincidencia[1] : 'cotizacion.xlsx';
-
-      const blob = await respuesta.blob();
-      const url = URL.createObjectURL(blob);
-      const enlace = document.createElement('a');
-      enlace.href = url;
-      enlace.download = nombreArchivo;
-      document.body.appendChild(enlace);
-      enlace.click();
-      enlace.remove();
-      URL.revokeObjectURL(url);
-
       cargando.style.display = 'none';
-      mostrarMensaje('✅ Listo, se descargó "' + nombreArchivo + '". Ya podés subir otro PDF.', 'exito');
+
+      (cuerpo.archivos || []).forEach(archivo => {
+        const blob = base64AArchivo(
+          archivo.datos,
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        );
+        const url = URL.createObjectURL(blob);
+        const enlace = document.createElement('a');
+        enlace.href = url;
+        enlace.download = archivo.nombre;
+        enlace.className = 'boton-descarga';
+        enlace.textContent = '⬇️ Descargar ' + archivo.etiqueta;
+        resultados.appendChild(enlace);
+      });
+
+      mostrarMensaje('✅ Listo, descargá los archivos de abajo. Ya podés subir otro PDF.', 'exito');
       resetearFormulario();
     } catch (err) {
       cargando.style.display = 'none';

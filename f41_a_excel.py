@@ -10,13 +10,14 @@ Por cada PDF de entrada se genera un .xlsx con el mismo nombre, en la
 misma carpeta que el PDF.
 """
 
+import re
 import sys
+from datetime import date
 from pathlib import Path
 
 import pdfplumber
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Border, Font, Side
-from openpyxl.utils import get_column_letter
+from openpyxl.styles import Alignment, Border, Color, Font, PatternFill, Side
 
 # Coordenadas (en puntos) de las columnas de la tabla "DETALLE DE ITEMS"
 # del formulario F.41. Son fijas porque el formulario es una plantilla
@@ -30,6 +31,13 @@ LEFT_BORDER_TOL = 2
 
 # Sólo se conservan los items cuyo código empieza con alguno de estos prefijos.
 PREFIJOS_CODIGO = ("4.01.008", "4.01.018")
+
+# Datos del encabezado del F.41 (página 1), usados para armar la Nota de
+# Pedido y para nombrar los archivos de salida.
+RE_EXPEDIENTE = re.compile(r"Expediente:\s*[A-Z]?-?(\d+/\d+)")
+RE_CONTRATACION = re.compile(r"CONTRATACI[ÓO]N DIRECTA N[º°]:\s*(\S+)")
+RE_APERTURA = re.compile(r"APERTURA:\s*(\S+)")
+RE_HORA = re.compile(r"HORA:\s*([\d:]+)")
 
 
 def bandas_de_filas(page):
@@ -104,51 +112,217 @@ def extraer_pdf(pdf_path: Path):
     return [f for f in filas if f["codigo"].startswith(PREFIJOS_CODIGO)]
 
 
-def escribir_excel(filas: list, salida: Path):
+def extraer_encabezado(pdf_path: Path):
+    with pdfplumber.open(pdf_path) as pdf:
+        texto = pdf.pages[0].extract_text() or ""
+
+    def buscar(patron, nombre):
+        m = patron.search(texto)
+        if not m:
+            raise ValueError(f"No se encontró '{nombre}' en el encabezado del PDF.")
+        return m.group(1)
+
+    return {
+        "expediente": buscar(RE_EXPEDIENTE, "N°Expediente"),
+        "contratacion": buscar(RE_CONTRATACION, "Contratación Directa"),
+        "apertura": buscar(RE_APERTURA, "Apertura"),
+        "hora": buscar(RE_HORA, "Hora"),
+    }
+
+
+def expediente_slug(expediente: str) -> str:
+    return expediente.replace("/", "-")
+
+
+# Formatos de moneda usados en las planillas de Zeid Medical (tal cual los
+# archivos de ejemplo que armó el cliente).
+FMT_MONEDA = r'_ "$"\ * #,##0.00_ ;_ "$"\ * \-#,##0.00_ ;_ "$"\ * "-"??_ ;_ @_ '
+FMT_MONEDA_ARS = r'_-[$$-2C0A]\ * #,##0.00_-;\-[$$-2C0A]\ * #,##0.00_-;_-[$$-2C0A]\ * "-"??_-;_-@_-'
+
+
+def escribir_notas_pedido(filas: list, encabezado: dict, salida: Path):
     wb = Workbook()
     ws = wb.active
-    ws.title = "Cotizacion"
+    ws.title = "NOTA DE PEDIDO"
 
-    negrita = Font(bold=True)
-    borde = Border(*(Side(style="thin"),) * 4)
+    hoy = date.today().strftime("%d/%m/%y")
+    hora_fmt = encabezado["hora"].replace(":", ",") + " HS"
+    linea_pedido = (
+        f"Nota de Pedido {encabezado['contratacion']} {encabezado['apertura']} "
+        f"{hora_fmt} Expt {encabezado['expediente']}"
+    )
 
-    fila = 1
-    encabezados_tabla = ["Nº", "Código", "Descripción", "Cantidad", "Precio Unitario", "Total"]
-    fila_encabezado_tabla = fila
+    fuente_titulo = Font(name="ITC Zapf Chancery", bold=True, size=36)
+    fuente_membrete = Font(name="Book Antiqua", bold=True, size=10)
+    fuente_pedido = Font(name="Courier New", bold=True, size=16)
+    fuente_encabezado_tabla = Font(name="Arial", bold=True, size=10)
+    fuente_nota = Font(name="Arial", size=11)
+    fuente_total = Font(name="Arial", bold=True, size=11)
+
+    centrado = Alignment(horizontal="center")
+    centrado_wrap = Alignment(horizontal="center", wrap_text=True)
+    borde_fino = Border(*(Side(style="thin"),) * 4)
+    borde_medio = Border(*(Side(style="medium"),) * 4)
+    relleno_amarillo = PatternFill("solid", fgColor="FFFF00")
+    relleno_encabezado = PatternFill("solid", fgColor=Color(theme=6, tint=0.5999938962981048))
+
+    ws.merge_cells("A1:E1")
+    ws["A1"] = "Zeid Medical S.R.L"
+    ws["A1"].font = fuente_titulo
+    ws["A1"].alignment = centrado
+    ws.row_dimensions[1].height = 39.75
+
+    ws.merge_cells("A2:E2")
+    ws["A2"] = (
+        "Av.25 de Mayo 1085-  Formosa"
+        + " " * 90
+        + hoy
+    )
+    ws["A2"].font = fuente_membrete
+    ws["A2"].alignment = centrado_wrap
+    ws.row_dimensions[2].height = 15
+
+    ws.merge_cells("A3:E3")
+    ws["A3"] = (
+        "        Cuit: 30-70849078-0                                                                                                         "
+        "IVA responsable Inscripto"
+    )
+    ws["A3"].font = fuente_membrete
+    ws["A3"].alignment = centrado
+
+    ws.merge_cells("A4:E4")
+    ws["A4"] = (
+        "  Ingresos Brutos: 30-70849078-0                                                                                    "
+        "Inicio de Actividad:07/2009"
+    )
+    ws["A4"].font = fuente_membrete
+    ws["A4"].alignment = centrado
+
+    ws.merge_cells("A5:E5")
+    ws["A5"] = linea_pedido
+    ws["A5"].font = fuente_pedido
+    ws["A5"].alignment = centrado
+    ws["A5"].fill = relleno_amarillo
+    ws["A5"].border = borde_medio
+    ws.row_dimensions[5].height = 21.4
+
+    ws.merge_cells("A6:A7")
+    ws.merge_cells("E6:E7")
+    encabezados_tabla = ["Reng", "Descripción", "Cantidad", "Precio", "Importe total"]
     for col, titulo in enumerate(encabezados_tabla, start=1):
-        c = ws.cell(row=fila, column=col, value=titulo)
-        c.font = negrita
-        c.border = borde
-        c.alignment = Alignment(horizontal="center")
-    fila += 1
+        c = ws.cell(row=6, column=col, value=titulo)
+        c.font = fuente_encabezado_tabla
+        c.alignment = centrado_wrap if col == 2 else centrado
+        c.fill = relleno_encabezado
+    ws.row_dimensions[6].height = 13.9
+    ws.row_dimensions[7].height = 13.9
 
+    fila = 8
     primera_fila_datos = fila
     for item in filas:
-        ws.cell(row=fila, column=1, value=item["rg"]).border = borde
-        ws.cell(row=fila, column=2, value=item["codigo"]).border = borde
-        c_desc = ws.cell(row=fila, column=3, value=item["descripcion"])
-        c_desc.border = borde
-        c_desc.alignment = Alignment(wrap_text=True, vertical="top")
-        ws.cell(row=fila, column=4, value=item["cantidad"]).border = borde
-        c_pu = ws.cell(row=fila, column=5)
-        c_pu.border = borde
-        c_pu.number_format = '"$"#,##0.00'
-        c_total = ws.cell(row=fila, column=6, value=f"=D{fila}*E{fila}")
-        c_total.border = borde
-        c_total.number_format = '"$"#,##0.00'
+        c_reng = ws.cell(row=fila, column=1, value=item["rg"])
+        c_reng.border = borde_fino
+        c_reng.alignment = centrado
+        ws.cell(row=fila, column=2, value=item["descripcion"])
+        c_cant = ws.cell(row=fila, column=3, value=item["cantidad"])
+        c_cant.border = borde_fino
+        c_cant.alignment = centrado
+        c_precio = ws.cell(row=fila, column=4)
+        c_precio.border = borde_fino
+        c_precio.number_format = FMT_MONEDA
+        c_importe = ws.cell(row=fila, column=5, value=f"=C{fila}*D{fila}")
+        c_importe.border = borde_fino
+        c_importe.number_format = FMT_MONEDA
         fila += 1
     ultima_fila_datos = fila - 1
 
-    ws.cell(row=fila, column=5, value="Total:").font = negrita
-    c_total_general = ws.cell(row=fila, column=6, value=f"=SUM(F{primera_fila_datos}:F{ultima_fila_datos})")
-    c_total_general.font = negrita
-    c_total_general.number_format = '"$"#,##0.00'
+    c_nota = ws.cell(
+        row=fila, column=2, value="NOTA : COTIZAR LOS PRODUCTOS QUE TENGAN VENCIMIENTO MAYOR A 12 MESES"
+    )
+    c_nota.font = fuente_nota
+    c_gran_total_label = ws.cell(row=fila, column=4, value="GRAN TOTAL")
+    c_gran_total_label.font = fuente_total
+    c_gran_total = ws.cell(row=fila, column=5, value=f"=SUM(E{primera_fila_datos}:E{ultima_fila_datos})")
+    c_gran_total.font = fuente_total
+    c_gran_total.number_format = FMT_MONEDA
 
-    anchos = {"A": 6, "B": 16, "C": 60, "D": 10, "E": 16, "F": 16}
+    anchos = {"A": 5.4, "B": 98.27, "C": 10.93, "D": 13.93, "E": 13.6}
     for letra, ancho in anchos.items():
         ws.column_dimensions[letra].width = ancho
 
-    ws.freeze_panes = f"A{fila_encabezado_tabla + 1}"
+    wb.save(salida)
+
+
+def escribir_planilla_trabajo(filas: list, encabezado: dict, salida: Path):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = expediente_slug(encabezado["expediente"])[:31]
+
+    fuente_seccion = Font(size=11)
+    fuente_encabezado = Font(bold=True, size=12)
+    fuente_encabezado_chico = Font(bold=True, size=11)
+
+    centrado = Alignment(horizontal="center")
+    izquierda = Alignment(horizontal="left")
+
+    ws["D2"] = "Datos F41"
+    ws["D2"].font = fuente_seccion
+    ws["D2"].alignment = izquierda
+
+    encabezados_tabla = [
+        ("A", "Renglon", centrado, fuente_encabezado, None),
+        ("B", "Codigos", centrado, fuente_encabezado, None),
+        ("C", "Descripcion", centrado, fuente_encabezado, None),
+        ("D", "Cantidad", izquierda, fuente_encabezado, None),
+        ("E", "Costo", centrado, fuente_encabezado_chico, FMT_MONEDA),
+        ("F", "Total costo", centrado, fuente_encabezado_chico, None),
+        ("G", "Precio ref.", centrado, fuente_encabezado_chico, FMT_MONEDA),
+        ("H", "Pcio Vta", centrado, fuente_encabezado_chico, None),
+        ("I", "Total de Vta", centrado, fuente_encabezado_chico, None),
+        ("J", "%", centrado, fuente_encabezado_chico, None),
+    ]
+    for letra, titulo, alineacion, fuente, numfmt in encabezados_tabla:
+        c = ws[f"{letra}4"]
+        c.value = titulo
+        c.font = fuente
+        c.alignment = alineacion
+        if numfmt:
+            c.number_format = numfmt
+    ws.row_dimensions[4].height = 15.75
+
+    fila = 5
+    primera_fila_datos = fila
+    for item in filas:
+        ws.cell(row=fila, column=1, value=item["rg"]).alignment = centrado
+        ws.cell(row=fila, column=2, value=item["codigo"]).alignment = centrado
+        ws.cell(row=fila, column=3, value=item["descripcion"])
+        ws.cell(row=fila, column=4, value=item["cantidad"]).alignment = izquierda
+        c_total_costo = ws.cell(row=fila, column=6, value=f"=D{fila}*E{fila}")
+        c_total_costo.alignment = centrado
+        c_total_costo.number_format = FMT_MONEDA
+        c_pcio_vta = ws.cell(row=fila, column=8, value=f"=E{fila}*1.5")
+        c_pcio_vta.alignment = centrado
+        c_pcio_vta.number_format = FMT_MONEDA_ARS
+        c_total_vta = ws.cell(row=fila, column=9, value=f"=H{fila}*D{fila}")
+        c_total_vta.alignment = centrado
+        c_total_vta.number_format = FMT_MONEDA_ARS
+        c_pct = ws.cell(row=fila, column=10, value=f"=H{fila}/E{fila}-1")
+        c_pct.alignment = centrado
+        c_pct.number_format = "0%"
+        fila += 1
+    ultima_fila_datos = fila - 1
+
+    c_total_costo_general = ws.cell(row=fila, column=6, value=f"=SUM(F{primera_fila_datos}:F{ultima_fila_datos})")
+    c_total_costo_general.number_format = FMT_MONEDA
+    c_total_vta_general = ws.cell(row=fila, column=9, value=f"=SUM(I{primera_fila_datos}:I{ultima_fila_datos})")
+    c_total_vta_general.number_format = FMT_MONEDA_ARS
+
+    anchos = {
+        "A": 11.4, "B": 10.66, "C": 10.93, "D": 15.4, "E": 11.4,
+        "F": 15.2, "G": 11.8, "H": 11.33, "I": 16.46, "J": 10.66,
+    }
+    for letra, ancho in anchos.items():
+        ws.column_dimensions[letra].width = ancho
 
     wb.save(salida)
 
@@ -158,9 +332,16 @@ def procesar(pdf_path: Path):
     filas = extraer_pdf(pdf_path)
     if not filas:
         print(f"  ADVERTENCIA: no se detectaron items en {pdf_path.name}")
-    salida = pdf_path.with_suffix(".xlsx")
-    escribir_excel(filas, salida)
-    print(f"  -> {salida} ({len(filas)} items)")
+    encabezado = extraer_encabezado(pdf_path)
+    slug = expediente_slug(encabezado["expediente"])
+
+    salida_np = pdf_path.parent / f"Nota de Pedido {slug}.xlsx"
+    escribir_notas_pedido(filas, encabezado, salida_np)
+    print(f"  -> {salida_np.name} ({len(filas)} items)")
+
+    salida_pt = pdf_path.parent / f"Planilla de Trabajo {slug}.xlsx"
+    escribir_planilla_trabajo(filas, encabezado, salida_pt)
+    print(f"  -> {salida_pt.name} ({len(filas)} items)")
 
 
 def main(argv):
