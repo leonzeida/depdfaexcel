@@ -148,10 +148,11 @@ def nombre_archivo_notas_pedido(encabezado: dict) -> str:
 ZONA_HORARIA_ARGENTINA = ZoneInfo("America/Argentina/Buenos_Aires")
 
 
-def linea_de_pedido(encabezado: dict) -> str:
+def linea_de_pedido(encabezado: dict, incluir_titulo: bool = True) -> str:
     hora_fmt = encabezado["hora"].replace(":", ",") + " HS"
+    prefijo = "Nota de Pedido " if incluir_titulo else ""
     return (
-        f"Nota de Pedido {encabezado['contratacion']} {encabezado['apertura']} "
+        f"{prefijo}{encabezado['contratacion']} {encabezado['apertura']} "
         f"{hora_fmt} Expt {encabezado['expediente']}"
     )
 
@@ -318,7 +319,7 @@ def escribir_planilla_trabajo(filas: list, encabezado: dict, salida: Path):
     slug = expediente_slug(encabezado["expediente"])
     ws.title = slug[:31]
 
-    fuente_pedido = Font(name="Courier New", bold=True, size=16, color="000000")
+    fuente_pedido = Font(bold=True, size=16, color="000000")
     fuente_encabezado = Font(bold=True, size=12, color="000000")
     fuente_encabezado_chico = Font(bold=True, size=11, color="000000")
 
@@ -327,7 +328,7 @@ def escribir_planilla_trabajo(filas: list, encabezado: dict, salida: Path):
     relleno_encabezado = PatternFill("solid", fgColor="D4EA6B")
 
     ws.merge_cells("A1:J1")
-    ws["A1"] = linea_de_pedido(encabezado)
+    ws["A1"] = linea_de_pedido(encabezado, incluir_titulo=False)
     ws["A1"].font = fuente_pedido
     ws["A1"].alignment = centrado
     ws.row_dimensions[1].height = 21.4
@@ -350,9 +351,9 @@ def escribir_planilla_trabajo(filas: list, encabezado: dict, salida: Path):
         ("B", "Codigos", centrado, fuente_encabezado, None),
         ("C", "Descripcion", centrado, fuente_encabezado, None),
         ("D", "Cantidad", izquierda, fuente_encabezado, None),
-        ("E", "Costo", centrado, fuente_encabezado_chico, FMT_MONEDA),
+        ("E", "Costo", centrado, fuente_encabezado_chico, FMT_MONEDA_ARS),
         ("F", "Total costo", centrado, fuente_encabezado_chico, None),
-        ("G", "Precio ref.", centrado, fuente_encabezado_chico, FMT_MONEDA),
+        ("G", "Precio ref.", centrado, fuente_encabezado_chico, FMT_MONEDA_ARS),
         ("H", "Pcio Vta", centrado, fuente_encabezado_chico, None),
         ("I", "Total de Vta", centrado, fuente_encabezado_chico, None),
         ("J", "%", centrado, fuente_encabezado_chico, None),
@@ -374,9 +375,15 @@ def escribir_planilla_trabajo(filas: list, encabezado: dict, salida: Path):
         ws.cell(row=fila, column=2, value=item["codigo"]).alignment = centrado
         ws.cell(row=fila, column=3, value=item["descripcion"])
         ws.cell(row=fila, column=4, value=item["cantidad"]).alignment = izquierda
+        c_costo = ws.cell(row=fila, column=5)
+        c_costo.alignment = centrado
+        c_costo.number_format = FMT_MONEDA_ARS
         c_total_costo = ws.cell(row=fila, column=6, value=f"=D{fila}*E{fila}")
         c_total_costo.alignment = centrado
         c_total_costo.number_format = FMT_MONEDA
+        c_precio_ref = ws.cell(row=fila, column=7)
+        c_precio_ref.alignment = centrado
+        c_precio_ref.number_format = FMT_MONEDA_ARS
         c_pcio_vta = ws.cell(row=fila, column=8, value=f"=E{fila}*1.5")
         c_pcio_vta.alignment = centrado
         c_pcio_vta.number_format = FMT_MONEDA_ARS
