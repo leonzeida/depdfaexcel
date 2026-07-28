@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 import pdfplumber
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.worksheet.filters import AutoFilter, FilterColumn
 from openpyxl.worksheet.table import Table, TableStyleInfo
 
 # Coordenadas (en puntos) de las columnas de la tabla "DETALLE DE ITEMS"
@@ -272,7 +273,13 @@ def escribir_notas_pedido(filas: list, encabezado: dict, salida: Path):
         displayName=f"TablaNotaPedido_{slug.replace('-', '_')}",
         ref=f"A6:E{ultima_fila_datos}",
     )
-    tabla.autoFilter = None  # sin botón de filtro en el encabezado
+    # openpyxl vuelve a crear un autoFilter vacío al guardar si la tabla
+    # tiene encabezado, así que no alcanza con ponerlo en None: hay que
+    # ocultar el botón de cada columna explícitamente (hiddenButton).
+    tabla.autoFilter = AutoFilter(
+        ref=tabla.ref,
+        filterColumn=[FilterColumn(colId=i, hiddenButton=True) for i in range(5)],
+    )
     tabla.tableStyleInfo = TableStyleInfo(
         name="TableStyleLight1",
         showRowStripes=False,
