@@ -141,7 +141,7 @@ def nombre_archivo_notas_pedido(encabezado: dict) -> str:
     dia, mes, anio = encabezado["apertura"].split("/")
     fecha = f"{dia}-{mes}-{anio[-2:]}"
     hora = encabezado["hora"].split(":")[0] + "Hs"
-    return f"EXPT  N° {expediente_u} {fecha} {hora}"
+    return f"EXPT  N° {expediente_u}   {fecha} {hora}"
 
 
 ZONA_HORARIA_ARGENTINA = ZoneInfo("America/Argentina/Buenos_Aires")
@@ -176,8 +176,7 @@ def escribir_notas_pedido(filas: list, encabezado: dict, salida: Path):
     centrado = Alignment(horizontal="center")
     centrado_wrap = Alignment(horizontal="center", wrap_text=True)
     centrado_medio = Alignment(horizontal="center", vertical="center")
-    borde_medio = Border(*(Side(style="medium"),) * 4)
-    relleno_encabezado = PatternFill("solid", fgColor="00B050")
+    relleno_encabezado = PatternFill("solid", fgColor="D4EA6B")
 
     ws.merge_cells("A1:E1")
     ws["A1"] = "Zeid Medical S.R.L"
@@ -215,9 +214,20 @@ def escribir_notas_pedido(filas: list, encabezado: dict, salida: Path):
     ws["A5"] = linea_pedido
     ws["A5"].font = fuente_pedido
     ws["A5"].alignment = centrado
-    ws["A5"].fill = relleno_encabezado
-    ws["A5"].border = borde_medio
     ws.row_dimensions[5].height = 21.4
+    # El borde y el relleno se aplican a las 5 celdas del rango combinado:
+    # en una celda combinada, Excel toma el borde derecho de la última
+    # columna (E) y no de la primera (A), así que si sólo se lo ponemos a
+    # A5 el lado derecho queda sin cerrar.
+    for c in range(1, 6):
+        celda = ws.cell(row=5, column=c)
+        celda.fill = relleno_encabezado
+        celda.border = Border(
+            top=Side(style="medium"),
+            bottom=Side(style="medium"),
+            left=Side(style="medium") if c == 1 else None,
+            right=Side(style="medium") if c == 5 else None,
+        )
 
     # Encabezado de la tabla en una única fila (antes "Reng" e "Importe
     # total" ocupaban 2 filas combinadas mientras el resto sólo 1, dejando
@@ -262,6 +272,7 @@ def escribir_notas_pedido(filas: list, encabezado: dict, salida: Path):
         displayName=f"TablaNotaPedido_{slug.replace('-', '_')}",
         ref=f"A6:E{ultima_fila_datos}",
     )
+    tabla.autoFilter = None  # sin botón de filtro en el encabezado
     tabla.tableStyleInfo = TableStyleInfo(
         name="TableStyleLight1",
         showRowStripes=False,
