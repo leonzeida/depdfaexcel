@@ -168,7 +168,8 @@ def escribir_notas_pedido(filas: list, encabezado: dict, salida: Path):
 
     fuente_titulo = Font(name="ITC Zapf Chancery", bold=True, size=36)
     fuente_membrete = Font(name="Book Antiqua", bold=True, size=10)
-    fuente_pedido = Font(name="Courier New", bold=True, size=16)
+    fuente_pedido = Font(name="Courier New", bold=True, size=16, color="000000")
+    fuente_encabezado_tabla = Font(name="Arial", bold=True, size=10, color="000000")
     fuente_nota = Font(name="Arial", size=11)
     fuente_total = Font(name="Arial", bold=True, size=11)
 
@@ -176,7 +177,7 @@ def escribir_notas_pedido(filas: list, encabezado: dict, salida: Path):
     centrado_wrap = Alignment(horizontal="center", wrap_text=True)
     centrado_medio = Alignment(horizontal="center", vertical="center")
     borde_medio = Border(*(Side(style="medium"),) * 4)
-    relleno_encabezado = PatternFill("solid", fgColor="D4EA6B")
+    relleno_encabezado = PatternFill("solid", fgColor="00B050")
 
     ws.merge_cells("A1:E1")
     ws["A1"] = "Zeid Medical S.R.L"
@@ -226,6 +227,7 @@ def escribir_notas_pedido(filas: list, encabezado: dict, salida: Path):
         c = ws.cell(row=6, column=col, value=titulo)
         c.alignment = centrado_wrap if col == 2 else centrado_medio
         c.fill = relleno_encabezado
+        c.font = fuente_encabezado_tabla
     ws.row_dimensions[6].height = 18
 
     fila = 7
@@ -261,8 +263,8 @@ def escribir_notas_pedido(filas: list, encabezado: dict, salida: Path):
         ref=f"A6:E{ultima_fila_datos}",
     )
     tabla.tableStyleInfo = TableStyleInfo(
-        name="TableStyleMedium9",
-        showRowStripes=True,
+        name="TableStyleLight1",
+        showRowStripes=False,
         showFirstColumn=False,
         showLastColumn=False,
         showColumnStripes=False,
