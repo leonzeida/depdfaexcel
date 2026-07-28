@@ -415,7 +415,7 @@ def escribir_planilla_trabajo(filas: list, encabezado: dict, salida: Path):
     c_total_vta_general.number_format = FMT_MONEDA_ARS
 
     anchos = {
-        "A": 11.4, "B": 10.66, "C": 10.93, "D": 15.4, "E": 11.4,
+        "A": 12, "B": 16, "C": 100, "D": 15.4, "E": 11.4,
         "F": 15.2, "G": 11.8, "H": 11.33, "I": 16.46, "J": 10.66,
     }
     for letra, ancho in anchos.items():
