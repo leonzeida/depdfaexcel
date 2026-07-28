@@ -135,6 +135,13 @@ def expediente_slug(expediente: str) -> str:
     return expediente.replace("/", "-")
 
 
+def nombre_archivo_notas_pedido(encabezado: dict) -> str:
+    slug = expediente_slug(encabezado["expediente"])
+    fecha = encabezado["apertura"].replace("/", "-")
+    hora = encabezado["hora"].replace(":", "-")
+    return f"{slug}-{fecha}-{hora}"
+
+
 # Formatos de moneda usados en las planillas de Zeid Medical (tal cual los
 # archivos de ejemplo que armó el cliente).
 FMT_MONEDA = r'_ "$"\ * #,##0.00_ ;_ "$"\ * \-#,##0.00_ ;_ "$"\ * "-"??_ ;_ @_ '
@@ -145,7 +152,7 @@ def escribir_notas_pedido(filas: list, encabezado: dict, salida: Path):
     wb = Workbook()
     ws = wb.active
     slug = expediente_slug(encabezado["expediente"])
-    ws.title = f"NOTA DE PEDIDO {slug}"[:31]
+    ws.title = slug[:31]
 
     hoy = date.today().strftime("%d/%m/%y")
     hora_fmt = encabezado["hora"].replace(":", ",") + " HS"
@@ -164,7 +171,7 @@ def escribir_notas_pedido(filas: list, encabezado: dict, salida: Path):
     centrado_wrap = Alignment(horizontal="center", wrap_text=True)
     centrado_medio = Alignment(horizontal="center", vertical="center")
     borde_medio = Border(*(Side(style="medium"),) * 4)
-    relleno_blanco = PatternFill("solid", fgColor="FFFFFF")
+    relleno_encabezado = PatternFill("solid", fgColor="FDE49B")
 
     ws.merge_cells("A1:E1")
     ws["A1"] = "Zeid Medical S.R.L"
@@ -202,7 +209,7 @@ def escribir_notas_pedido(filas: list, encabezado: dict, salida: Path):
     ws["A5"] = linea_pedido
     ws["A5"].font = fuente_pedido
     ws["A5"].alignment = centrado
-    ws["A5"].fill = relleno_blanco
+    ws["A5"].fill = relleno_encabezado
     ws["A5"].border = borde_medio
     ws.row_dimensions[5].height = 21.4
 
@@ -213,6 +220,7 @@ def escribir_notas_pedido(filas: list, encabezado: dict, salida: Path):
     for col, titulo in enumerate(encabezados_tabla, start=1):
         c = ws.cell(row=6, column=col, value=titulo)
         c.alignment = centrado_wrap if col == 2 else centrado_medio
+        c.fill = relleno_encabezado
     ws.row_dimensions[6].height = 18
 
     fila = 7
@@ -244,7 +252,9 @@ def escribir_notas_pedido(filas: list, encabezado: dict, salida: Path):
     ws.add_table(tabla)
 
     c_nota = ws.cell(
-        row=fila, column=2, value="NOTA : COTIZAR LOS PRODUCTOS QUE TENGAN VENCIMIENTO MAYOR A 12 MESES"
+        row=fila,
+        column=2,
+        value="NOTA : LOS PRODUCTOS COTIZADOS TIENEN QUE TENER UN VENCIMIENTO DE 12 MESES O MAYOR.",
     )
     c_nota.font = fuente_nota
     c_gran_total_label = ws.cell(row=fila, column=4, value="GRAN TOTAL")
@@ -342,7 +352,7 @@ def procesar(pdf_path: Path):
     encabezado = extraer_encabezado(pdf_path)
     slug = expediente_slug(encabezado["expediente"])
 
-    salida_np = pdf_path.parent / f"Nota de Pedido {slug}.xlsx"
+    salida_np = pdf_path.parent / f"{nombre_archivo_notas_pedido(encabezado)}.xlsx"
     escribir_notas_pedido(filas, encabezado, salida_np)
     print(f"  -> {salida_np.name} ({len(filas)} items)")
 

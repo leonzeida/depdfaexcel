@@ -22,6 +22,7 @@ from f41_a_excel import (  # noqa: E402
     expediente_slug,
     extraer_encabezado,
     extraer_pdf,
+    nombre_archivo_notas_pedido,
 )
 
 app = Flask(__name__)
@@ -58,7 +59,7 @@ def convertir():
             return jsonify(error="No se encontraron items en la tabla de ese PDF."), 400
 
         slug = expediente_slug(encabezado["expediente"])
-        salida_np = Path(tmp) / f"Nota de Pedido {slug}.xlsx"
+        salida_np = Path(tmp) / f"{nombre_archivo_notas_pedido(encabezado)}.xlsx"
         salida_pt = Path(tmp) / f"Planilla de Trabajo {slug}.xlsx"
         escribir_notas_pedido(filas, encabezado, salida_np)
         escribir_planilla_trabajo(filas, encabezado, salida_pt)
