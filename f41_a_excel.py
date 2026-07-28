@@ -216,7 +216,7 @@ def escribir_notas_pedido(filas: list, encabezado: dict, salida: Path):
     # Encabezado de la tabla en una única fila (antes "Reng" e "Importe
     # total" ocupaban 2 filas combinadas mientras el resto sólo 1, dejando
     # un hueco sin estilo debajo de Descripción/Cantidad/Precio).
-    encabezados_tabla = ["Reng", "Descripción", "Cantidad", "Precio", "Importe total"]
+    encabezados_tabla = ["Renglones", "Descripción", "Cantidad", "Precio", "Importe total"]
     for col, titulo in enumerate(encabezados_tabla, start=1):
         c = ws.cell(row=6, column=col, value=titulo)
         c.alignment = centrado_wrap if col == 2 else centrado_medio
@@ -237,6 +237,19 @@ def escribir_notas_pedido(filas: list, encabezado: dict, salida: Path):
         c_importe.number_format = FMT_MONEDA
         fila += 1
     ultima_fila_datos = fila - 1
+
+    borde_negro = Side(style="thin", color="000000")
+    primera_fila_tabla = 6
+    for r in range(primera_fila_tabla, ultima_fila_datos + 1):
+        for c in range(1, 6):
+            if r not in (primera_fila_tabla, ultima_fila_datos) and c not in (1, 5):
+                continue
+            ws.cell(row=r, column=c).border = Border(
+                top=borde_negro if r == primera_fila_tabla else None,
+                bottom=borde_negro if r == ultima_fila_datos else None,
+                left=borde_negro if c == 1 else None,
+                right=borde_negro if c == 5 else None,
+            )
 
     tabla = Table(
         displayName=f"TablaNotaPedido_{slug.replace('-', '_')}",
@@ -263,7 +276,7 @@ def escribir_notas_pedido(filas: list, encabezado: dict, salida: Path):
     c_gran_total.font = fuente_total
     c_gran_total.number_format = FMT_MONEDA
 
-    anchos = {"A": 5.4, "B": 98.27, "C": 10.93, "D": 13.93, "E": 13.6}
+    anchos = {"A": 11.4, "B": 98.27, "C": 10.93, "D": 13.93, "E": 13.6}
     for letra, ancho in anchos.items():
         ws.column_dimensions[letra].width = ancho
 
