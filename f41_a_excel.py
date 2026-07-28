@@ -148,6 +148,14 @@ def nombre_archivo_notas_pedido(encabezado: dict) -> str:
 ZONA_HORARIA_ARGENTINA = ZoneInfo("America/Argentina/Buenos_Aires")
 
 
+def linea_de_pedido(encabezado: dict) -> str:
+    hora_fmt = encabezado["hora"].replace(":", ",") + " HS"
+    return (
+        f"Nota de Pedido {encabezado['contratacion']} {encabezado['apertura']} "
+        f"{hora_fmt} Expt {encabezado['expediente']}"
+    )
+
+
 # Formatos de moneda usados en las planillas de Zeid Medical (tal cual los
 # archivos de ejemplo que armó el cliente).
 FMT_MONEDA = r'_ "$"\ * #,##0.00_ ;_ "$"\ * \-#,##0.00_ ;_ "$"\ * "-"??_ ;_ @_ '
@@ -161,11 +169,7 @@ def escribir_notas_pedido(filas: list, encabezado: dict, salida: Path):
     ws.title = slug[:31]
 
     hoy = datetime.now(ZONA_HORARIA_ARGENTINA).strftime("%d/%m/%y")
-    hora_fmt = encabezado["hora"].replace(":", ",") + " HS"
-    linea_pedido = (
-        f"Nota de Pedido {encabezado['contratacion']} {encabezado['apertura']} "
-        f"{hora_fmt} Expt {encabezado['expediente']}"
-    )
+    linea_pedido = linea_de_pedido(encabezado)
 
     fuente_titulo = Font(name="ITC Zapf Chancery", bold=True, size=36)
     fuente_membrete = Font(name="Book Antiqua", bold=True, size=10)
@@ -311,18 +315,35 @@ def escribir_notas_pedido(filas: list, encabezado: dict, salida: Path):
 def escribir_planilla_trabajo(filas: list, encabezado: dict, salida: Path):
     wb = Workbook()
     ws = wb.active
-    ws.title = expediente_slug(encabezado["expediente"])[:31]
+    slug = expediente_slug(encabezado["expediente"])
+    ws.title = slug[:31]
 
-    fuente_seccion = Font(size=11)
-    fuente_encabezado = Font(bold=True, size=12)
-    fuente_encabezado_chico = Font(bold=True, size=11)
+    fuente_pedido = Font(name="Courier New", bold=True, size=16, color="000000")
+    fuente_encabezado = Font(bold=True, size=12, color="000000")
+    fuente_encabezado_chico = Font(bold=True, size=11, color="000000")
 
     centrado = Alignment(horizontal="center")
     izquierda = Alignment(horizontal="left")
+    relleno_encabezado = PatternFill("solid", fgColor="D4EA6B")
 
-    ws["D2"] = "Datos F41"
-    ws["D2"].font = fuente_seccion
-    ws["D2"].alignment = izquierda
+    ws.merge_cells("A1:J1")
+    ws["A1"] = linea_de_pedido(encabezado)
+    ws["A1"].font = fuente_pedido
+    ws["A1"].alignment = centrado
+    ws.row_dimensions[1].height = 21.4
+    # Mismo criterio que la fila 5 de Nota de Pedido: el relleno y el
+    # borde se aplican a las 10 celdas del rango combinado, porque en una
+    # celda combinada Excel toma el borde derecho de la última columna
+    # (J) y no de la primera (A).
+    for c in range(1, 11):
+        celda = ws.cell(row=1, column=c)
+        celda.fill = relleno_encabezado
+        celda.border = Border(
+            top=Side(style="medium"),
+            bottom=Side(style="medium"),
+            left=Side(style="medium") if c == 1 else None,
+            right=Side(style="medium") if c == 10 else None,
+        )
 
     encabezados_tabla = [
         ("A", "Renglon", centrado, fuente_encabezado, None),
@@ -337,15 +358,16 @@ def escribir_planilla_trabajo(filas: list, encabezado: dict, salida: Path):
         ("J", "%", centrado, fuente_encabezado_chico, None),
     ]
     for letra, titulo, alineacion, fuente, numfmt in encabezados_tabla:
-        c = ws[f"{letra}4"]
+        c = ws[f"{letra}2"]
         c.value = titulo
         c.font = fuente
         c.alignment = alineacion
+        c.fill = relleno_encabezado
         if numfmt:
             c.number_format = numfmt
-    ws.row_dimensions[4].height = 15.75
+    ws.row_dimensions[2].height = 15.75
 
-    fila = 5
+    fila = 3
     primera_fila_datos = fila
     for item in filas:
         ws.cell(row=fila, column=1, value=item["rg"]).alignment = centrado
@@ -366,6 +388,26 @@ def escribir_planilla_trabajo(filas: list, encabezado: dict, salida: Path):
         c_pct.number_format = "0%"
         fila += 1
     ultima_fila_datos = fila - 1
+
+    tabla = Table(
+        displayName=f"TablaPlanilla_{slug.replace('-', '_')}",
+        ref=f"A2:J{ultima_fila_datos}",
+    )
+    # Mismo fix que en Nota de Pedido: hay que ocultar el botón de cada
+    # columna explícitamente porque openpyxl recrea un autoFilter vacío
+    # al guardar si la tabla tiene fila de encabezado.
+    tabla.autoFilter = AutoFilter(
+        ref=tabla.ref,
+        filterColumn=[FilterColumn(colId=i, hiddenButton=True) for i in range(10)],
+    )
+    tabla.tableStyleInfo = TableStyleInfo(
+        name="TableStyleLight1",
+        showRowStripes=False,
+        showFirstColumn=False,
+        showLastColumn=False,
+        showColumnStripes=False,
+    )
+    ws.add_table(tabla)
 
     c_total_costo_general = ws.cell(row=fila, column=6, value=f"=SUM(F{primera_fila_datos}:F{ultima_fila_datos})")
     c_total_costo_general.number_format = FMT_MONEDA
