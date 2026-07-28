@@ -12,8 +12,9 @@ misma carpeta que el PDF.
 
 import re
 import sys
-from datetime import date
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pdfplumber
 from openpyxl import Workbook
@@ -136,10 +137,14 @@ def expediente_slug(expediente: str) -> str:
 
 
 def nombre_archivo_notas_pedido(encabezado: dict) -> str:
-    slug = expediente_slug(encabezado["expediente"])
-    fecha = encabezado["apertura"].replace("/", "-")
-    hora = encabezado["hora"].replace(":", "-")
-    return f"{slug}-{fecha}-{hora}"
+    expediente_u = "U-" + expediente_slug(encabezado["expediente"])
+    dia, mes, anio = encabezado["apertura"].split("/")
+    fecha = f"{dia}-{mes}-{anio[-2:]}"
+    hora = encabezado["hora"].split(":")[0] + "Hs"
+    return f"EXPT  N° {expediente_u} {fecha} {hora}"
+
+
+ZONA_HORARIA_ARGENTINA = ZoneInfo("America/Argentina/Buenos_Aires")
 
 
 # Formatos de moneda usados en las planillas de Zeid Medical (tal cual los
@@ -154,7 +159,7 @@ def escribir_notas_pedido(filas: list, encabezado: dict, salida: Path):
     slug = expediente_slug(encabezado["expediente"])
     ws.title = slug[:31]
 
-    hoy = date.today().strftime("%d/%m/%y")
+    hoy = datetime.now(ZONA_HORARIA_ARGENTINA).strftime("%d/%m/%y")
     hora_fmt = encabezado["hora"].replace(":", ",") + " HS"
     linea_pedido = (
         f"Nota de Pedido {encabezado['contratacion']} {encabezado['apertura']} "
@@ -171,7 +176,7 @@ def escribir_notas_pedido(filas: list, encabezado: dict, salida: Path):
     centrado_wrap = Alignment(horizontal="center", wrap_text=True)
     centrado_medio = Alignment(horizontal="center", vertical="center")
     borde_medio = Border(*(Side(style="medium"),) * 4)
-    relleno_encabezado = PatternFill("solid", fgColor="FDE49B")
+    relleno_encabezado = PatternFill("solid", fgColor="D4EA6B")
 
     ws.merge_cells("A1:E1")
     ws["A1"] = "Zeid Medical S.R.L"
