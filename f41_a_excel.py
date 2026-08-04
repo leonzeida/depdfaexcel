@@ -17,7 +17,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pdfplumber
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.worksheet.filters import AutoFilter, FilterColumn
 from openpyxl.worksheet.table import Table, TableStyleInfo
@@ -429,6 +429,200 @@ def escribir_planilla_trabajo(filas: list, encabezado: dict, salida: Path):
         ws.column_dimensions[letra].width = ancho
 
     wb.save(salida)
+
+
+HOJA_PRECIOS_REFERENCIA = "Precios de referencia"
+
+
+def _clave_item(codigo, descripcion) -> tuple:
+    # El código del F.41 es un código de categoría, no de producto: el
+    # mismo código puede repetirse en varios renglones con descripciones
+    # completamente distintas (confirmado con datos reales: "4.01.008.066"
+    # aparece en 4 items distintos de un mismo PDF). Por eso la clave para
+    # identificar "el mismo ítem" entre archivos es código + descripción,
+    # no el código solo.
+    return (str(codigo), (descripcion or "").strip())
+
+
+def leer_precios_referencia(maestro_path: Path | None) -> dict:
+    """Lee el Excel maestro de precios de referencia (si se subió uno) y
+    devuelve {(codigo, descripcion): {"precio": ...}}."""
+    if maestro_path is None:
+        return {}
+
+    wb = load_workbook(maestro_path, data_only=True)
+    ws = wb[HOJA_PRECIOS_REFERENCIA] if HOJA_PRECIOS_REFERENCIA in wb.sheetnames else wb.active
+
+    precios = {}
+    for fila in ws.iter_rows(min_row=2, values_only=True):
+        codigo, descripcion, precio = (fila + (None, None, None))[:3]
+        if not codigo or precio is None:
+            continue
+        precios[_clave_item(codigo, descripcion)] = {"precio": precio}
+    return precios
+
+
+def escribir_comparacion_precios(filas: list, encabezado: dict, salida: Path, referencias: dict):
+    wb = Workbook()
+    ws = wb.active
+    slug = expediente_slug(encabezado["expediente"])
+    ws.title = slug[:31]
+
+    fuente_pedido = Font(bold=True, size=16, color="000000")
+    fuente_encabezado = Font(bold=True, size=11, color="000000")
+
+    centrado = Alignment(horizontal="center")
+    izquierda = Alignment(horizontal="left")
+    relleno_encabezado = PatternFill("solid", fgColor="D4EA6B")
+
+    ws.merge_cells("A1:K1")
+    ws["A1"] = linea_de_pedido(encabezado, incluir_titulo=False)
+    ws["A1"].font = fuente_pedido
+    ws["A1"].alignment = centrado
+    ws.row_dimensions[1].height = 21.4
+    # Mismo criterio que la fila 5 de Nota de Pedido / A1 de Planilla de
+    # Trabajo: relleno y borde en las 11 celdas del rango combinado, porque
+    # en una celda combinada Excel toma el borde derecho de la última
+    # columna (K) y no de la primera (A).
+    for c in range(1, 12):
+        celda = ws.cell(row=1, column=c)
+        celda.fill = relleno_encabezado
+        celda.border = Border(
+            top=Side(style="medium"),
+            bottom=Side(style="medium"),
+            left=Side(style="medium") if c == 1 else None,
+            right=Side(style="medium") if c == 11 else None,
+        )
+
+    encabezados_tabla = [
+        "Renglon", "Codigo", "Descripcion", "Cantidad",
+        "Proveedor 1", "Proveedor 2", "Proveedor 3", "Proveedor 4",
+        "Mejor precio nuevo", "Precio ref. anterior", "Precio ref. final",
+    ]
+    for col, titulo in enumerate(encabezados_tabla, start=1):
+        c = ws.cell(row=2, column=col, value=titulo)
+        c.alignment = centrado
+        c.fill = relleno_encabezado
+        c.font = fuente_encabezado
+    ws.row_dimensions[2].height = 15.75
+
+    fila = 3
+    for item in filas:
+        ws.cell(row=fila, column=1, value=item["rg"]).alignment = centrado
+        ws.cell(row=fila, column=2, value=item["codigo"]).alignment = centrado
+        ws.cell(row=fila, column=3, value=item["descripcion"])
+        ws.cell(row=fila, column=4, value=item["cantidad"]).alignment = izquierda
+
+        for col in (5, 6, 7, 8):
+            c_prov = ws.cell(row=fila, column=col)
+            c_prov.alignment = centrado
+            c_prov.number_format = FMT_MONEDA_ARS
+
+        c_mejor = ws.cell(row=fila, column=9, value=f"=MIN(E{fila}:H{fila})")
+        c_mejor.alignment = centrado
+        c_mejor.number_format = FMT_MONEDA_ARS
+
+        referencia = referencias.get(_clave_item(item["codigo"], item["descripcion"]))
+        c_ref_anterior = ws.cell(
+            row=fila, column=10, value=referencia["precio"] if referencia else None
+        )
+        c_ref_anterior.alignment = centrado
+        c_ref_anterior.number_format = FMT_MONEDA_ARS
+
+        c_ref_final = ws.cell(row=fila, column=11, value=f"=I{fila}")
+        c_ref_final.alignment = centrado
+        c_ref_final.number_format = FMT_MONEDA_ARS
+
+        fila += 1
+    ultima_fila_datos = fila - 1
+
+    tabla = Table(
+        displayName=f"TablaComparacion_{slug.replace('-', '_')}",
+        ref=f"A2:K{ultima_fila_datos}",
+    )
+    tabla.autoFilter = AutoFilter(
+        ref=tabla.ref,
+        filterColumn=[FilterColumn(colId=i, hiddenButton=True) for i in range(11)],
+    )
+    tabla.tableStyleInfo = TableStyleInfo(
+        name="TableStyleLight1",
+        showRowStripes=False,
+        showFirstColumn=False,
+        showLastColumn=False,
+        showColumnStripes=False,
+    )
+    ws.add_table(tabla)
+
+    anchos = {
+        "A": 10, "B": 16, "C": 100, "D": 10.7,
+        "E": 13.4, "F": 13.4, "G": 13.4, "H": 13.4,
+        "I": 15.4, "J": 15.4, "K": 13.4,
+    }
+    for letra, ancho in anchos.items():
+        ws.column_dimensions[letra].width = ancho
+
+    wb.save(salida)
+
+
+def escribir_precios_referencia(precios: dict, salida: Path):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = HOJA_PRECIOS_REFERENCIA
+
+    fuente_encabezado = Font(bold=True, size=11, color="000000")
+    centrado = Alignment(horizontal="center")
+    relleno_encabezado = PatternFill("solid", fgColor="D4EA6B")
+
+    for col, titulo in enumerate(("Codigo", "Descripcion", "Precio de referencia", "Actualizado"), start=1):
+        c = ws.cell(row=1, column=col, value=titulo)
+        c.alignment = centrado
+        c.fill = relleno_encabezado
+        c.font = fuente_encabezado
+
+    hoy = datetime.now(ZONA_HORARIA_ARGENTINA).strftime("%d/%m/%y")
+    fila = 2
+    for clave in sorted(precios):
+        codigo, descripcion = clave
+        datos = precios[clave]
+        ws.cell(row=fila, column=1, value=codigo).alignment = centrado
+        ws.cell(row=fila, column=2, value=descripcion)
+        c_precio = ws.cell(row=fila, column=3, value=datos.get("precio"))
+        c_precio.alignment = centrado
+        c_precio.number_format = FMT_MONEDA_ARS
+        ws.cell(row=fila, column=4, value=hoy).alignment = centrado
+        fila += 1
+
+    ws.column_dimensions["A"].width = 16
+    ws.column_dimensions["B"].width = 60
+    ws.column_dimensions["C"].width = 18
+    ws.column_dimensions["D"].width = 14
+
+    wb.save(salida)
+
+
+def actualizar_precios_referencia(comparacion_path: Path, maestro_previo_path: Path | None, salida: Path):
+    """Lee una comparación de precios ya completada (con las fórmulas
+    resueltas por Excel al guardarla) y un maestro anterior opcional, y
+    escribe un maestro de precios de referencia actualizado."""
+    precios = leer_precios_referencia(maestro_previo_path)
+
+    wb = load_workbook(comparacion_path, data_only=True)
+    ws = wb.active
+    for fila in ws.iter_rows(min_row=3, values_only=True):
+        if len(fila) < 11:
+            continue
+        codigo, descripcion, precio_final = fila[1], fila[2], fila[10]
+        proveedores = fila[4:8]
+        # Si no se cargó ningún precio de proveedor, "Mejor precio nuevo"
+        # queda en 0 (así calcula Excel un MIN() sobre celdas vacías) y
+        # "Precio ref. final" lo copia por default: hay que ignorar esas
+        # filas, si no se guardaría un precio de referencia de $0 para
+        # ítems que todavía nadie cotizó.
+        if not codigo or precio_final is None or not any(p is not None for p in proveedores):
+            continue
+        precios[_clave_item(codigo, descripcion)] = {"precio": precio_final}
+
+    escribir_precios_referencia(precios, salida)
 
 
 def procesar(pdf_path: Path):

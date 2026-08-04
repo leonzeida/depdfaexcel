@@ -10,10 +10,18 @@
     margin: 0;
     min-height: 100vh;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
     background: #eef2f7;
     font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    padding: 40px 16px;
+  }
+  .contenedor {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    width: 100%;
+    max-width: 520px;
   }
   .tarjeta {
     background: #ffffff;
@@ -21,10 +29,15 @@
     box-shadow: 0 10px 30px rgba(0,0,0,0.08);
     padding: 40px;
     width: 100%;
-    max-width: 520px;
   }
   h1 {
     font-size: 26px;
+    margin: 0 0 6px;
+    color: #1a2b4c;
+    text-align: center;
+  }
+  h2 {
+    font-size: 20px;
     margin: 0 0 6px;
     color: #1a2b4c;
     text-align: center;
@@ -86,6 +99,49 @@
     display: none;
   }
   input[type=file] { display: none; }
+  .campo-archivo {
+    margin-bottom: 16px;
+  }
+  .campo-archivo label.etiqueta-campo {
+    display: block;
+    font-size: 14px;
+    font-weight: 600;
+    color: #1a2b4c;
+    margin-bottom: 6px;
+  }
+  .campo-archivo .selector {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    border: 2px dashed #b7c3dd;
+    border-radius: 10px;
+    padding: 12px 14px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .campo-archivo .selector:hover {
+    background: #f4f8ff;
+    border-color: #4f7cff;
+  }
+  .campo-archivo .selector .nombre {
+    font-size: 14px;
+    color: #5a6b8c;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .campo-archivo .selector .boton-elegir {
+    flex-shrink: 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: #4f7cff;
+  }
+  .campo-archivo .ayuda {
+    font-size: 12.5px;
+    color: #8291ab;
+    margin-top: 4px;
+  }
   button {
     width: 100%;
     margin-top: 24px;
@@ -101,14 +157,14 @@
   }
   button:hover { background: #3a63e0; }
   button:disabled { background: #b7c3dd; cursor: not-allowed; }
-  #cargando {
+  .cargando {
     display: none;
     text-align: center;
     margin-top: 18px;
     color: #5a6b8c;
     font-size: 15px;
   }
-  #resultados {
+  .resultados {
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -130,16 +186,21 @@
   @media (prefers-color-scheme: dark) {
     body { background: #10131a; }
     .tarjeta { background: #1b2030; box-shadow: none; }
-    h1 { color: #eef2f7; }
+    h1, h2 { color: #eef2f7; }
     p.subtitulo { color: #9aa8c7; }
     .zona { border-color: #333d55; }
     .zona:hover, .zona.sobre { background: #232a3d; border-color: #4f7cff; }
     .zona .texto-principal { color: #eef2f7; }
     #nombre-archivo { color: #eef2f7; }
+    .campo-archivo label.etiqueta-campo { color: #eef2f7; }
+    .campo-archivo .selector { border-color: #333d55; }
+    .campo-archivo .selector:hover { background: #232a3d; border-color: #4f7cff; }
   }
 </style>
 </head>
 <body>
+<div class="contenedor">
+
   <div class="tarjeta">
     <h1>Pedido de Cotización → Excel</h1>
     <p class="subtitulo">Subí el PDF del F.41 y descargá la planilla lista para cotizar.</p>
@@ -159,43 +220,102 @@
       <input type="file" id="archivo" name="pdf" accept="application/pdf,.pdf" required>
       <button type="submit" id="boton" disabled>Convertir a Excel</button>
     </form>
-    <div id="cargando">Convirtiendo, un momento…</div>
-    <div id="resultados"></div>
+    <div class="cargando" id="cargando">Convirtiendo, un momento…</div>
+    <div class="resultados" id="resultados"></div>
   </div>
 
+  <div class="tarjeta">
+    <h2>Comparar precios de proveedores</h2>
+    <p class="subtitulo">Subí el PDF del F.41 y, si tenés uno, el Excel de precios de referencia de la vez anterior.</p>
+
+    <div class="mensaje" id="mensaje-comparar"></div>
+
+    <form id="formulario-comparar" action="/comparar" method="post" enctype="multipart/form-data">
+      <div class="campo-archivo">
+        <label class="etiqueta-campo" for="pdf-comparar">PDF del F.41</label>
+        <label class="selector" for="pdf-comparar">
+          <span class="nombre" id="nombre-pdf-comparar">Ningún archivo elegido</span>
+          <span class="boton-elegir">Elegir PDF</span>
+        </label>
+        <input type="file" id="pdf-comparar" name="pdf" accept="application/pdf,.pdf" required>
+      </div>
+      <div class="campo-archivo">
+        <label class="etiqueta-campo" for="maestro-comparar">Precios de referencia (opcional)</label>
+        <label class="selector" for="maestro-comparar">
+          <span class="nombre" id="nombre-maestro-comparar">Ningún archivo elegido</span>
+          <span class="boton-elegir">Elegir Excel</span>
+        </label>
+        <input type="file" id="maestro-comparar" name="maestro" accept=".xlsx">
+        <div class="ayuda">Si no tenés uno todavía, dejalo vacío: se genera de cero.</div>
+      </div>
+      <button type="submit" id="boton-comparar">Comparar precios</button>
+    </form>
+    <div class="cargando" id="cargando-comparar">Generando la comparación, un momento…</div>
+    <div class="resultados" id="resultados-comparar"></div>
+  </div>
+
+  <div class="tarjeta">
+    <h2>Actualizar precios de referencia</h2>
+    <p class="subtitulo">Cuando termines de cargar las cotizaciones y elegir el precio final en la comparación, subila acá para guardar el nuevo maestro.</p>
+
+    <div class="mensaje" id="mensaje-actualizar"></div>
+
+    <form id="formulario-actualizar" action="/actualizar_referencia" method="post" enctype="multipart/form-data">
+      <div class="campo-archivo">
+        <label class="etiqueta-campo" for="comparacion-actualizar">Comparación de precios completa</label>
+        <label class="selector" for="comparacion-actualizar">
+          <span class="nombre" id="nombre-comparacion-actualizar">Ningún archivo elegido</span>
+          <span class="boton-elegir">Elegir Excel</span>
+        </label>
+        <input type="file" id="comparacion-actualizar" name="comparacion" accept=".xlsx" required>
+      </div>
+      <div class="campo-archivo">
+        <label class="etiqueta-campo" for="maestro-actualizar">Precios de referencia anterior (opcional)</label>
+        <label class="selector" for="maestro-actualizar">
+          <span class="nombre" id="nombre-maestro-actualizar">Ningún archivo elegido</span>
+          <span class="boton-elegir">Elegir Excel</span>
+        </label>
+        <input type="file" id="maestro-actualizar" name="maestro" accept=".xlsx">
+        <div class="ayuda">Si lo subís, se conservan los ítems que no aparecen en esta comparación.</div>
+      </div>
+      <button type="submit" id="boton-actualizar">Actualizar referencia</button>
+    </form>
+    <div class="cargando" id="cargando-actualizar">Actualizando el maestro, un momento…</div>
+    <div class="resultados" id="resultados-actualizar"></div>
+  </div>
+
+</div>
+
 <script>
+  function base64AArchivo(base64, tipoMime) {
+    const binario = atob(base64);
+    const bytes = new Uint8Array(binario.length);
+    for (let i = 0; i < binario.length; i++) bytes[i] = binario.charCodeAt(i);
+    return new Blob([bytes], { type: tipoMime });
+  }
+
+  function mostrarMensaje(el, texto, tipo) {
+    el.textContent = texto;
+    el.className = 'mensaje ' + tipo;
+    el.style.display = 'block';
+  }
+
+  function ocultarMensaje(el) {
+    el.style.display = 'none';
+  }
+
+  // --- Tarjeta 1: convertir PDF a Nota de Pedido / Planilla de Trabajo ---
   const zona = document.getElementById('zona');
   const input = document.getElementById('archivo');
   const nombre = document.getElementById('nombre-archivo');
   const boton = document.getElementById('boton');
   const formulario = document.getElementById('formulario');
-  const cargando = document.getElementById('cargando');
-  const mensaje = document.getElementById('mensaje');
-  const resultados = document.getElementById('resultados');
 
   function mostrarArchivo(file) {
     if (!file) return;
     nombre.textContent = '📄 ' + file.name;
     nombre.style.display = 'block';
     boton.disabled = false;
-  }
-
-  function ocultarMensaje() {
-    mensaje.style.display = 'none';
-  }
-
-  function mostrarMensaje(texto, tipo) {
-    mensaje.textContent = texto;
-    mensaje.className = 'mensaje ' + tipo;
-    mensaje.style.display = 'block';
-  }
-
-  function resetearFormulario() {
-    formulario.reset();
-    nombre.style.display = 'none';
-    boton.disabled = true;
-    boton.textContent = 'Convertir a Excel';
-    cargando.style.display = 'none';
   }
 
   input.addEventListener('change', () => mostrarArchivo(input.files[0]));
@@ -220,58 +340,108 @@
     }
   });
 
-  function base64AArchivo(base64, tipoMime) {
-    const binario = atob(base64);
-    const bytes = new Uint8Array(binario.length);
-    for (let i = 0; i < binario.length; i++) bytes[i] = binario.charCodeAt(i);
-    return new Blob([bytes], { type: tipoMime });
+  // --- Lógica común: enviar un formulario, mostrar mensajes y botones de descarga ---
+  function conectarFormulario({ formulario, boton, cargando, mensaje, resultados, textoInicial, textoCargando, etiquetaExito, alExito }) {
+    formulario.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      ocultarMensaje(mensaje);
+      resultados.innerHTML = '';
+      boton.disabled = true;
+      boton.textContent = textoCargando;
+      cargando.style.display = 'block';
+
+      try {
+        const datos = new FormData(formulario);
+        const respuesta = await fetch(formulario.action, { method: 'POST', body: datos });
+        const cuerpo = await respuesta.json().catch(() => ({}));
+
+        cargando.style.display = 'none';
+
+        if (!respuesta.ok) {
+          mostrarMensaje(mensaje, cuerpo.error || 'Ocurrió un error al procesar el archivo.', 'error');
+          boton.disabled = false;
+          boton.textContent = textoInicial;
+          return;
+        }
+
+        (cuerpo.archivos || []).forEach(archivo => {
+          const blob = base64AArchivo(
+            archivo.datos,
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+          );
+          const url = URL.createObjectURL(blob);
+          const enlace = document.createElement('a');
+          enlace.href = url;
+          enlace.download = archivo.nombre;
+          enlace.className = 'boton-descarga';
+          enlace.textContent = '⬇️ Descargar ' + archivo.etiqueta;
+          resultados.appendChild(enlace);
+        });
+
+        mostrarMensaje(mensaje, etiquetaExito, 'exito');
+        if (alExito) alExito();
+        boton.disabled = false;
+        boton.textContent = textoInicial;
+      } catch (err) {
+        cargando.style.display = 'none';
+        mostrarMensaje(mensaje, 'No se pudo conectar con la página. Volvé a intentar.', 'error');
+        boton.disabled = false;
+        boton.textContent = textoInicial;
+      }
+    });
   }
 
-  formulario.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    ocultarMensaje();
-    resultados.innerHTML = '';
-    boton.disabled = true;
-    boton.textContent = 'Convirtiendo…';
-    cargando.style.display = 'block';
+  conectarFormulario({
+    formulario,
+    boton,
+    cargando: document.getElementById('cargando'),
+    mensaje: document.getElementById('mensaje'),
+    resultados: document.getElementById('resultados'),
+    textoInicial: 'Convertir a Excel',
+    textoCargando: 'Convirtiendo…',
+    etiquetaExito: '✅ Listo, descargá los archivos de abajo. Ya podés subir otro PDF.',
+    alExito: () => {
+      formulario.reset();
+      nombre.style.display = 'none';
+      boton.disabled = true;
+    },
+  });
 
-    try {
-      const datos = new FormData(formulario);
-      const respuesta = await fetch('/convertir', { method: 'POST', body: datos });
-      const cuerpo = await respuesta.json().catch(() => ({}));
+  // --- Campos de archivo "simples" (tarjetas 2 y 3): mostrar el nombre elegido ---
+  function conectarCampoArchivo(idInput, idNombre) {
+    const campo = document.getElementById(idInput);
+    const etiquetaNombre = document.getElementById(idNombre);
+    campo.addEventListener('change', () => {
+      etiquetaNombre.textContent = campo.files[0] ? campo.files[0].name : 'Ningún archivo elegido';
+    });
+  }
+  conectarCampoArchivo('pdf-comparar', 'nombre-pdf-comparar');
+  conectarCampoArchivo('maestro-comparar', 'nombre-maestro-comparar');
+  conectarCampoArchivo('comparacion-actualizar', 'nombre-comparacion-actualizar');
+  conectarCampoArchivo('maestro-actualizar', 'nombre-maestro-actualizar');
 
-      if (!respuesta.ok) {
-        mostrarMensaje(cuerpo.error || 'Ocurrió un error al convertir el archivo.', 'error');
-        boton.disabled = false;
-        boton.textContent = 'Convertir a Excel';
-        cargando.style.display = 'none';
-        return;
-      }
+  // --- Tarjeta 2: comparador de precios ---
+  conectarFormulario({
+    formulario: document.getElementById('formulario-comparar'),
+    boton: document.getElementById('boton-comparar'),
+    cargando: document.getElementById('cargando-comparar'),
+    mensaje: document.getElementById('mensaje-comparar'),
+    resultados: document.getElementById('resultados-comparar'),
+    textoInicial: 'Comparar precios',
+    textoCargando: 'Generando…',
+    etiquetaExito: '✅ Listo, descargá la comparación de abajo.',
+  });
 
-      cargando.style.display = 'none';
-
-      (cuerpo.archivos || []).forEach(archivo => {
-        const blob = base64AArchivo(
-          archivo.datos,
-          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        );
-        const url = URL.createObjectURL(blob);
-        const enlace = document.createElement('a');
-        enlace.href = url;
-        enlace.download = archivo.nombre;
-        enlace.className = 'boton-descarga';
-        enlace.textContent = '⬇️ Descargar ' + archivo.etiqueta;
-        resultados.appendChild(enlace);
-      });
-
-      mostrarMensaje('✅ Listo, descargá los archivos de abajo. Ya podés subir otro PDF.', 'exito');
-      resetearFormulario();
-    } catch (err) {
-      cargando.style.display = 'none';
-      mostrarMensaje('No se pudo conectar con la página. Volvé a intentar.', 'error');
-      boton.disabled = false;
-      boton.textContent = 'Convertir a Excel';
-    }
+  // --- Tarjeta 3: actualizar precios de referencia ---
+  conectarFormulario({
+    formulario: document.getElementById('formulario-actualizar'),
+    boton: document.getElementById('boton-actualizar'),
+    cargando: document.getElementById('cargando-actualizar'),
+    mensaje: document.getElementById('mensaje-actualizar'),
+    resultados: document.getElementById('resultados-actualizar'),
+    textoInicial: 'Actualizar referencia',
+    textoCargando: 'Actualizando…',
+    etiquetaExito: '✅ Listo, descargá el maestro actualizado de abajo.',
   });
 </script>
 </body>
