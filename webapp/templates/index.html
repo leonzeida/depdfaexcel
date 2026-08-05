@@ -21,7 +21,7 @@
     flex-direction: column;
     gap: 24px;
     width: 100%;
-    max-width: 520px;
+    max-width: 760px;
   }
   .tarjeta {
     background: #ffffff;
@@ -137,11 +137,6 @@
     font-weight: 600;
     color: #4f7cff;
   }
-  .campo-archivo .ayuda {
-    font-size: 12.5px;
-    color: #8291ab;
-    margin-top: 4px;
-  }
   button {
     width: 100%;
     margin-top: 24px;
@@ -183,6 +178,70 @@
     transition: background 0.15s;
   }
   .boton-descarga:hover { background: #248a56; }
+
+  .titulo-comparacion {
+    font-family: "Courier New", Courier, monospace;
+    font-weight: 700;
+    text-align: center;
+    background: #d4ea6b;
+    color: #33430f;
+    border-radius: 8px;
+    padding: 10px;
+    margin: 20px 0 0;
+  }
+  .tabla-comparacion-wrap {
+    overflow-x: auto;
+    margin-top: 14px;
+    border: 1px solid #dbe1e8;
+    border-radius: 10px;
+  }
+  table.tabla-comparacion {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+  }
+  table.tabla-comparacion th, table.tabla-comparacion td {
+    border-bottom: 1px solid #dbe1e8;
+    border-right: 1px solid #dbe1e8;
+    padding: 7px 8px;
+    text-align: center;
+    white-space: nowrap;
+  }
+  table.tabla-comparacion th:last-child, table.tabla-comparacion td:last-child { border-right: none; }
+  table.tabla-comparacion thead th {
+    background: #eef2f7;
+    font-weight: 600;
+    color: #1a2b4c;
+    position: sticky;
+    top: 0;
+  }
+  table.tabla-comparacion td.descripcion {
+    text-align: left;
+    white-space: normal;
+    min-width: 220px;
+  }
+  table.tabla-comparacion td.precio-referencia { color: #5a6b8c; }
+  table.tabla-comparacion td.mejor-precio { font-weight: 700; color: #1e7a46; }
+  table.tabla-comparacion input[type=number] {
+    width: 92px;
+    padding: 5px 6px;
+    border: 1px solid #b7c3dd;
+    border-radius: 6px;
+    font-size: 13px;
+  }
+  table.tabla-comparacion input.nombre-proveedor {
+    width: 100%;
+    min-width: 92px;
+    border: none;
+    background: transparent;
+    font-weight: 600;
+    text-align: center;
+    color: #1a2b4c;
+    font-size: 13px;
+  }
+  table.tabla-comparacion input.nombre-proveedor:focus { outline: 1px solid #4f7cff; border-radius: 4px; }
+
   @media (prefers-color-scheme: dark) {
     body { background: #10131a; }
     .tarjeta { background: #1b2030; box-shadow: none; }
@@ -195,6 +254,13 @@
     .campo-archivo label.etiqueta-campo { color: #eef2f7; }
     .campo-archivo .selector { border-color: #333d55; }
     .campo-archivo .selector:hover { background: #232a3d; border-color: #4f7cff; }
+    .tabla-comparacion-wrap { border-color: #333d55; }
+    table.tabla-comparacion th, table.tabla-comparacion td { border-color: #333d55; }
+    table.tabla-comparacion thead th { background: #232a3d; color: #eef2f7; }
+    table.tabla-comparacion input[type=number] { background: #10131a; border-color: #333d55; color: #eef2f7; }
+    table.tabla-comparacion input.nombre-proveedor { color: #eef2f7; }
+    table.tabla-comparacion td.precio-referencia { color: #9aa8c7; }
+    .titulo-comparacion { background: #3a4522; color: #d4ea6b; }
   }
 </style>
 </head>
@@ -226,11 +292,11 @@
 
   <div class="tarjeta">
     <h2>Comparar precios de proveedores</h2>
-    <p class="subtitulo">Subí el PDF del F.41 y, si tenés uno, el Excel de precios de referencia de la vez anterior.</p>
+    <p class="subtitulo">Subí el PDF del F.41. Los precios de referencia de la vez anterior aparecen solos — no hace falta subir ningún otro archivo.</p>
 
     <div class="mensaje" id="mensaje-comparar"></div>
 
-    <form id="formulario-comparar" action="/comparar" method="post" enctype="multipart/form-data">
+    <form id="formulario-comparar" action="/items_para_comparar" method="post" enctype="multipart/form-data">
       <div class="campo-archivo">
         <label class="etiqueta-campo" for="pdf-comparar">PDF del F.41</label>
         <label class="selector" for="pdf-comparar">
@@ -239,49 +305,10 @@
         </label>
         <input type="file" id="pdf-comparar" name="pdf" accept="application/pdf,.pdf" required>
       </div>
-      <div class="campo-archivo">
-        <label class="etiqueta-campo" for="maestro-comparar">Precios de referencia (opcional)</label>
-        <label class="selector" for="maestro-comparar">
-          <span class="nombre" id="nombre-maestro-comparar">Ningún archivo elegido</span>
-          <span class="boton-elegir">Elegir Excel</span>
-        </label>
-        <input type="file" id="maestro-comparar" name="maestro" accept=".xlsx">
-        <div class="ayuda">Si no tenés uno todavía, dejalo vacío: se genera de cero.</div>
-      </div>
-      <button type="submit" id="boton-comparar">Comparar precios</button>
+      <button type="submit" id="boton-comparar">Cargar ítems</button>
     </form>
-    <div class="cargando" id="cargando-comparar">Generando la comparación, un momento…</div>
-    <div class="resultados" id="resultados-comparar"></div>
-  </div>
-
-  <div class="tarjeta">
-    <h2>Actualizar precios de referencia</h2>
-    <p class="subtitulo">Cuando termines de cargar las cotizaciones y elegir el precio final en la comparación, subila acá para guardar el nuevo maestro.</p>
-
-    <div class="mensaje" id="mensaje-actualizar"></div>
-
-    <form id="formulario-actualizar" action="/actualizar_referencia" method="post" enctype="multipart/form-data">
-      <div class="campo-archivo">
-        <label class="etiqueta-campo" for="comparacion-actualizar">Comparación de precios completa</label>
-        <label class="selector" for="comparacion-actualizar">
-          <span class="nombre" id="nombre-comparacion-actualizar">Ningún archivo elegido</span>
-          <span class="boton-elegir">Elegir Excel</span>
-        </label>
-        <input type="file" id="comparacion-actualizar" name="comparacion" accept=".xlsx" required>
-      </div>
-      <div class="campo-archivo">
-        <label class="etiqueta-campo" for="maestro-actualizar">Precios de referencia anterior (opcional)</label>
-        <label class="selector" for="maestro-actualizar">
-          <span class="nombre" id="nombre-maestro-actualizar">Ningún archivo elegido</span>
-          <span class="boton-elegir">Elegir Excel</span>
-        </label>
-        <input type="file" id="maestro-actualizar" name="maestro" accept=".xlsx">
-        <div class="ayuda">Si lo subís, se conservan los ítems que no aparecen en esta comparación.</div>
-      </div>
-      <button type="submit" id="boton-actualizar">Actualizar referencia</button>
-    </form>
-    <div class="cargando" id="cargando-actualizar">Actualizando el maestro, un momento…</div>
-    <div class="resultados" id="resultados-actualizar"></div>
+    <div class="cargando" id="cargando-comparar">Cargando los ítems, un momento…</div>
+    <div id="zona-tabla-comparar"></div>
   </div>
 
 </div>
@@ -302,6 +329,11 @@
 
   function ocultarMensaje(el) {
     el.style.display = 'none';
+  }
+
+  function formatoPesos(valor) {
+    if (valor === null || valor === undefined || !isFinite(valor)) return '—';
+    return valor.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2 });
   }
 
   // --- Tarjeta 1: convertir PDF a Nota de Pedido / Planilla de Trabajo ---
@@ -340,108 +372,235 @@
     }
   });
 
-  // --- Lógica común: enviar un formulario, mostrar mensajes y botones de descarga ---
-  function conectarFormulario({ formulario, boton, cargando, mensaje, resultados, textoInicial, textoCargando, etiquetaExito, alExito }) {
-    formulario.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      ocultarMensaje(mensaje);
-      resultados.innerHTML = '';
-      boton.disabled = true;
-      boton.textContent = textoCargando;
-      cargando.style.display = 'block';
+  formulario.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const mensaje = document.getElementById('mensaje');
+    const cargando = document.getElementById('cargando');
+    const resultados = document.getElementById('resultados');
 
-      try {
-        const datos = new FormData(formulario);
-        const respuesta = await fetch(formulario.action, { method: 'POST', body: datos });
-        const cuerpo = await respuesta.json().catch(() => ({}));
+    ocultarMensaje(mensaje);
+    resultados.innerHTML = '';
+    boton.disabled = true;
+    boton.textContent = 'Convirtiendo…';
+    cargando.style.display = 'block';
 
-        cargando.style.display = 'none';
+    try {
+      const datos = new FormData(formulario);
+      const respuesta = await fetch(formulario.action, { method: 'POST', body: datos });
+      const cuerpo = await respuesta.json().catch(() => ({}));
+      cargando.style.display = 'none';
 
-        if (!respuesta.ok) {
-          mostrarMensaje(mensaje, cuerpo.error || 'Ocurrió un error al procesar el archivo.', 'error');
-          boton.disabled = false;
-          boton.textContent = textoInicial;
-          return;
-        }
-
-        (cuerpo.archivos || []).forEach(archivo => {
-          const blob = base64AArchivo(
-            archivo.datos,
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-          );
-          const url = URL.createObjectURL(blob);
-          const enlace = document.createElement('a');
-          enlace.href = url;
-          enlace.download = archivo.nombre;
-          enlace.className = 'boton-descarga';
-          enlace.textContent = '⬇️ Descargar ' + archivo.etiqueta;
-          resultados.appendChild(enlace);
-        });
-
-        mostrarMensaje(mensaje, etiquetaExito, 'exito');
-        if (alExito) alExito();
+      if (!respuesta.ok) {
+        mostrarMensaje(mensaje, cuerpo.error || 'Ocurrió un error al procesar el archivo.', 'error');
         boton.disabled = false;
-        boton.textContent = textoInicial;
-      } catch (err) {
-        cargando.style.display = 'none';
-        mostrarMensaje(mensaje, 'No se pudo conectar con la página. Volvé a intentar.', 'error');
-        boton.disabled = false;
-        boton.textContent = textoInicial;
+        boton.textContent = 'Convertir a Excel';
+        return;
       }
-    });
-  }
 
-  conectarFormulario({
-    formulario,
-    boton,
-    cargando: document.getElementById('cargando'),
-    mensaje: document.getElementById('mensaje'),
-    resultados: document.getElementById('resultados'),
-    textoInicial: 'Convertir a Excel',
-    textoCargando: 'Convirtiendo…',
-    etiquetaExito: '✅ Listo, descargá los archivos de abajo. Ya podés subir otro PDF.',
-    alExito: () => {
+      (cuerpo.archivos || []).forEach(archivo => {
+        const blob = base64AArchivo(
+          archivo.datos,
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        );
+        const url = URL.createObjectURL(blob);
+        const enlace = document.createElement('a');
+        enlace.href = url;
+        enlace.download = archivo.nombre;
+        enlace.className = 'boton-descarga';
+        enlace.textContent = '⬇️ Descargar ' + archivo.etiqueta;
+        resultados.appendChild(enlace);
+      });
+
+      mostrarMensaje(mensaje, '✅ Listo, descargá los archivos de abajo. Ya podés subir otro PDF.', 'exito');
       formulario.reset();
       nombre.style.display = 'none';
       boton.disabled = true;
-    },
+      boton.textContent = 'Convertir a Excel';
+    } catch (err) {
+      cargando.style.display = 'none';
+      mostrarMensaje(mensaje, 'No se pudo conectar con la página. Volvé a intentar.', 'error');
+      boton.disabled = false;
+      boton.textContent = 'Convertir a Excel';
+    }
   });
 
-  // --- Campos de archivo "simples" (tarjetas 2 y 3): mostrar el nombre elegido ---
-  function conectarCampoArchivo(idInput, idNombre) {
-    const campo = document.getElementById(idInput);
-    const etiquetaNombre = document.getElementById(idNombre);
-    campo.addEventListener('change', () => {
-      etiquetaNombre.textContent = campo.files[0] ? campo.files[0].name : 'Ningún archivo elegido';
+  // --- Tarjeta 2: comparador de precios de proveedores (vive en Google Sheets) ---
+  const formularioComparar = document.getElementById('formulario-comparar');
+  const botonComparar = document.getElementById('boton-comparar');
+  const cargandoComparar = document.getElementById('cargando-comparar');
+  const mensajeComparar = document.getElementById('mensaje-comparar');
+  const zonaTablaComparar = document.getElementById('zona-tabla-comparar');
+  const pdfComparar = document.getElementById('pdf-comparar');
+  const nombrePdfComparar = document.getElementById('nombre-pdf-comparar');
+
+  pdfComparar.addEventListener('change', () => {
+    nombrePdfComparar.textContent = pdfComparar.files[0] ? pdfComparar.files[0].name : 'Ningún archivo elegido';
+  });
+
+  function crearTablaComparacion(titulo, items) {
+    zonaTablaComparar.innerHTML = '';
+
+    const tituloEl = document.createElement('p');
+    tituloEl.className = 'titulo-comparacion';
+    tituloEl.textContent = titulo;
+    zonaTablaComparar.appendChild(tituloEl);
+
+    const envoltorio = document.createElement('div');
+    envoltorio.className = 'tabla-comparacion-wrap';
+
+    const tabla = document.createElement('table');
+    tabla.className = 'tabla-comparacion';
+
+    const thead = document.createElement('thead');
+    const filaEncabezado = document.createElement('tr');
+    ['Renglón', 'Código', 'Descripción', 'Cantidad', 'Precio ref. anterior'].forEach(texto => {
+      const th = document.createElement('th');
+      th.textContent = texto;
+      filaEncabezado.appendChild(th);
     });
+    for (let p = 1; p <= 4; p++) {
+      const th = document.createElement('th');
+      const inputNombre = document.createElement('input');
+      inputNombre.type = 'text';
+      inputNombre.className = 'nombre-proveedor';
+      inputNombre.value = 'Proveedor ' + p;
+      th.appendChild(inputNombre);
+      filaEncabezado.appendChild(th);
+    }
+    ['Mejor precio nuevo', 'Precio final'].forEach(texto => {
+      const th = document.createElement('th');
+      th.textContent = texto;
+      filaEncabezado.appendChild(th);
+    });
+    thead.appendChild(filaEncabezado);
+    tabla.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    const filasConDatos = [];
+
+    items.forEach(item => {
+      const fila = document.createElement('tr');
+      const celda = (texto, clase) => {
+        const td = document.createElement('td');
+        if (clase) td.className = clase;
+        td.textContent = texto;
+        return td;
+      };
+      fila.appendChild(celda(item.rg));
+      fila.appendChild(celda(item.codigo));
+      fila.appendChild(celda(item.descripcion, 'descripcion'));
+      fila.appendChild(celda(item.cantidad));
+      fila.appendChild(celda(formatoPesos(item.precio_referencia), 'precio-referencia'));
+
+      const inputsProveedor = [];
+      for (let p = 0; p < 4; p++) {
+        const td = document.createElement('td');
+        const inputProveedor = document.createElement('input');
+        inputProveedor.type = 'number';
+        inputProveedor.step = '0.01';
+        inputProveedor.min = '0';
+        td.appendChild(inputProveedor);
+        fila.appendChild(td);
+        inputsProveedor.push(inputProveedor);
+      }
+
+      const tdMejor = document.createElement('td');
+      tdMejor.className = 'mejor-precio';
+      tdMejor.textContent = '—';
+      fila.appendChild(tdMejor);
+
+      const tdFinal = document.createElement('td');
+      const inputFinal = document.createElement('input');
+      inputFinal.type = 'number';
+      inputFinal.step = '0.01';
+      inputFinal.min = '0';
+      tdFinal.appendChild(inputFinal);
+      fila.appendChild(tdFinal);
+
+      let tocadoAMano = false;
+      inputFinal.addEventListener('input', () => { tocadoAMano = true; });
+
+      function recalcularMejorPrecio() {
+        const valores = inputsProveedor
+          .map(i => parseFloat(i.value))
+          .filter(v => !isNaN(v) && v >= 0);
+        if (!valores.length) {
+          tdMejor.textContent = '—';
+          return;
+        }
+        const mejor = Math.min(...valores);
+        tdMejor.textContent = formatoPesos(mejor);
+        if (!tocadoAMano) inputFinal.value = mejor;
+      }
+      inputsProveedor.forEach(i => i.addEventListener('input', recalcularMejorPrecio));
+
+      tbody.appendChild(fila);
+      filasConDatos.push({ codigo: item.codigo, descripcion: item.descripcion, inputFinal });
+    });
+    tabla.appendChild(tbody);
+    envoltorio.appendChild(tabla);
+    zonaTablaComparar.appendChild(envoltorio);
+
+    const botonGuardar = document.createElement('button');
+    botonGuardar.textContent = 'Guardar precios de referencia';
+    botonGuardar.addEventListener('click', async () => {
+      const itemsAGuardar = filasConDatos
+        .filter(d => d.inputFinal.value !== '')
+        .map(d => ({ codigo: d.codigo, descripcion: d.descripcion, precio: parseFloat(d.inputFinal.value) }));
+
+      if (!itemsAGuardar.length) {
+        mostrarMensaje(mensajeComparar, 'Completá al menos un precio final antes de guardar.', 'error');
+        return;
+      }
+
+      botonGuardar.disabled = true;
+      botonGuardar.textContent = 'Guardando…';
+      try {
+        const respuesta = await fetch('/guardar_referencia', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: itemsAGuardar }),
+        });
+        const cuerpo = await respuesta.json().catch(() => ({}));
+        if (!respuesta.ok) {
+          mostrarMensaje(mensajeComparar, cuerpo.error || 'Ocurrió un error al guardar.', 'error');
+        } else {
+          mostrarMensaje(mensajeComparar, '✅ Se guardaron ' + cuerpo.cantidad + ' precio(s) de referencia.', 'exito');
+        }
+      } catch (err) {
+        mostrarMensaje(mensajeComparar, 'No se pudo conectar con la página. Volvé a intentar.', 'error');
+      }
+      botonGuardar.disabled = false;
+      botonGuardar.textContent = 'Guardar precios de referencia';
+    });
+    zonaTablaComparar.appendChild(botonGuardar);
   }
-  conectarCampoArchivo('pdf-comparar', 'nombre-pdf-comparar');
-  conectarCampoArchivo('maestro-comparar', 'nombre-maestro-comparar');
-  conectarCampoArchivo('comparacion-actualizar', 'nombre-comparacion-actualizar');
-  conectarCampoArchivo('maestro-actualizar', 'nombre-maestro-actualizar');
 
-  // --- Tarjeta 2: comparador de precios ---
-  conectarFormulario({
-    formulario: document.getElementById('formulario-comparar'),
-    boton: document.getElementById('boton-comparar'),
-    cargando: document.getElementById('cargando-comparar'),
-    mensaje: document.getElementById('mensaje-comparar'),
-    resultados: document.getElementById('resultados-comparar'),
-    textoInicial: 'Comparar precios',
-    textoCargando: 'Generando…',
-    etiquetaExito: '✅ Listo, descargá la comparación de abajo.',
-  });
+  formularioComparar.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    ocultarMensaje(mensajeComparar);
+    zonaTablaComparar.innerHTML = '';
+    botonComparar.disabled = true;
+    botonComparar.textContent = 'Cargando…';
+    cargandoComparar.style.display = 'block';
 
-  // --- Tarjeta 3: actualizar precios de referencia ---
-  conectarFormulario({
-    formulario: document.getElementById('formulario-actualizar'),
-    boton: document.getElementById('boton-actualizar'),
-    cargando: document.getElementById('cargando-actualizar'),
-    mensaje: document.getElementById('mensaje-actualizar'),
-    resultados: document.getElementById('resultados-actualizar'),
-    textoInicial: 'Actualizar referencia',
-    textoCargando: 'Actualizando…',
-    etiquetaExito: '✅ Listo, descargá el maestro actualizado de abajo.',
+    try {
+      const datos = new FormData(formularioComparar);
+      const respuesta = await fetch('/items_para_comparar', { method: 'POST', body: datos });
+      const cuerpo = await respuesta.json().catch(() => ({}));
+      cargandoComparar.style.display = 'none';
+
+      if (!respuesta.ok) {
+        mostrarMensaje(mensajeComparar, cuerpo.error || 'Ocurrió un error al procesar el archivo.', 'error');
+      } else {
+        crearTablaComparacion(cuerpo.titulo, cuerpo.items);
+      }
+    } catch (err) {
+      cargandoComparar.style.display = 'none';
+      mostrarMensaje(mensajeComparar, 'No se pudo conectar con la página. Volvé a intentar.', 'error');
+    }
+    botonComparar.disabled = false;
+    botonComparar.textContent = 'Cargar ítems';
   });
 </script>
 </body>

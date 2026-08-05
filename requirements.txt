@@ -2,3 +2,5 @@ Flask
 pdfplumber
 openpyxl
 gunicorn
+gspread
+google-auth

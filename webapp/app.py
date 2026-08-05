@@ -17,16 +17,16 @@ from flask import Flask, jsonify, render_template, request
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from f41_a_excel import (  # noqa: E402
-    actualizar_precios_referencia,
-    escribir_comparacion_precios,
+    clave_item,
     escribir_notas_pedido,
     escribir_planilla_trabajo,
     expediente_slug,
     extraer_encabezado,
     extraer_pdf,
-    leer_precios_referencia,
+    linea_de_pedido,
     nombre_archivo_notas_pedido,
 )
+from sheets_referencia import ErrorPreciosReferencia, guardar_precios_referencia, leer_precios_referencia
 
 app = Flask(__name__)
 PUERTO = 5000
@@ -78,8 +78,8 @@ def convertir():
         return jsonify(archivos=archivos)
 
 
-@app.route("/comparar", methods=["POST"])
-def comparar():
+@app.route("/items_para_comparar", methods=["POST"])
+def items_para_comparar():
     archivo = request.files.get("pdf")
     if not archivo or archivo.filename == "":
         return jsonify(error="Elegí un archivo PDF antes de comparar."), 400
@@ -87,16 +87,9 @@ def comparar():
     if not archivo.filename.lower().endswith(".pdf"):
         return jsonify(error="El archivo tiene que ser un PDF."), 400
 
-    maestro = request.files.get("maestro")
-
     with tempfile.TemporaryDirectory() as tmp:
         pdf_path = Path(tmp) / archivo.filename
         archivo.save(pdf_path)
-
-        maestro_path = None
-        if maestro and maestro.filename:
-            maestro_path = Path(tmp) / maestro.filename
-            maestro.save(maestro_path)
 
         try:
             filas = extraer_pdf(pdf_path)
@@ -109,52 +102,58 @@ def comparar():
         if not filas:
             return jsonify(error="No se encontraron items en la tabla de ese PDF."), 400
 
-        try:
-            referencias = leer_precios_referencia(maestro_path)
-        except Exception:
-            return jsonify(
-                error="No se pudo leer el archivo de precios de referencia. Revisá que sea el maestro correcto."
-            ), 400
-
-        slug = expediente_slug(encabezado["expediente"])
-        salida = Path(tmp) / f"Comparacion de precios {slug}.xlsx"
-        escribir_comparacion_precios(filas, encabezado, salida, referencias)
-
-        datos = base64.b64encode(salida.read_bytes()).decode("ascii")
+    try:
+        referencias = leer_precios_referencia()
+    except ErrorPreciosReferencia:
         return jsonify(
-            archivos=[{"etiqueta": "Comparación de precios", "nombre": salida.name, "datos": datos}]
+            error="No se pudo conectar con la planilla de precios de referencia. Probá de nuevo en un momento."
+        ), 502
+
+    items = []
+    for item in filas:
+        precio_referencia = referencias.get(clave_item(item["codigo"], item["descripcion"]))
+        items.append(
+            {
+                "rg": item["rg"],
+                "codigo": item["codigo"],
+                "descripcion": item["descripcion"],
+                "cantidad": item["cantidad"],
+                "precio_referencia": precio_referencia,
+            }
         )
 
+    return jsonify(titulo=linea_de_pedido(encabezado, incluir_titulo=False), items=items)
 
-@app.route("/actualizar_referencia", methods=["POST"])
-def actualizar_referencia():
-    comparacion = request.files.get("comparacion")
-    if not comparacion or comparacion.filename == "":
-        return jsonify(error="Elegí el archivo de comparación de precios ya completado."), 400
 
-    maestro = request.files.get("maestro")
+@app.route("/guardar_referencia", methods=["POST"])
+def guardar_referencia():
+    cuerpo = request.get_json(silent=True) or {}
+    items = cuerpo.get("items") or []
 
-    with tempfile.TemporaryDirectory() as tmp:
-        comparacion_path = Path(tmp) / comparacion.filename
-        comparacion.save(comparacion_path)
-
-        maestro_path = None
-        if maestro and maestro.filename:
-            maestro_path = Path(tmp) / maestro.filename
-            maestro.save(maestro_path)
-
-        salida = Path(tmp) / "Precios de referencia.xlsx"
+    items_validos = []
+    for item in items:
+        codigo = (item.get("codigo") or "").strip()
+        descripcion = (item.get("descripcion") or "").strip()
+        precio = item.get("precio")
+        if not codigo or precio is None:
+            continue
         try:
-            actualizar_precios_referencia(comparacion_path, maestro_path, salida)
-        except Exception:
-            return jsonify(
-                error="No se pudo leer ese archivo. Revisá que sea una comparación de precios generada por esta página."
-            ), 400
+            precio = float(precio)
+        except (TypeError, ValueError):
+            continue
+        items_validos.append({"codigo": codigo, "descripcion": descripcion, "precio": precio})
 
-        datos = base64.b64encode(salida.read_bytes()).decode("ascii")
+    if not items_validos:
+        return jsonify(error="No hay ningún precio para guardar."), 400
+
+    try:
+        guardar_precios_referencia(items_validos)
+    except ErrorPreciosReferencia:
         return jsonify(
-            archivos=[{"etiqueta": "Precios de referencia", "nombre": salida.name, "datos": datos}]
-        )
+            error="No se pudo guardar en la planilla de precios de referencia. Probá de nuevo en un momento."
+        ), 502
+
+    return jsonify(ok=True, cantidad=len(items_validos))
 
 
 def abrir_navegador():
