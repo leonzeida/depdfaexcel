@@ -43,7 +43,7 @@ def _cliente() -> gspread.Client:
         credenciales = Credentials.from_service_account_info(info, scopes=_ALCANCES)
         return gspread.authorize(credenciales)
     except Exception as exc:
-        raise ErrorPreciosReferencia(f"Credenciales de Google inválidas: {exc}") from exc
+        raise ErrorPreciosReferencia(f"Credenciales de Google inválidas: {type(exc).__name__}: {exc!r}") from exc
 
 
 def _hoja():
@@ -66,7 +66,9 @@ def leer_precios_referencia() -> dict:
     except ErrorPreciosReferencia:
         raise
     except Exception as exc:
-        raise ErrorPreciosReferencia(f"No se pudo leer la planilla de precios de referencia: {exc}") from exc
+        raise ErrorPreciosReferencia(
+            f"No se pudo leer la planilla de precios de referencia: {type(exc).__name__}: {exc!r}"
+        ) from exc
 
     precios = {}
     for fila in filas[1:]:  # fila[0] son los encabezados
@@ -96,7 +98,9 @@ def guardar_precios_referencia(items: list):
     except ErrorPreciosReferencia:
         raise
     except Exception as exc:
-        raise ErrorPreciosReferencia(f"No se pudo abrir la planilla de precios de referencia: {exc}") from exc
+        raise ErrorPreciosReferencia(
+            f"No se pudo abrir la planilla de precios de referencia: {type(exc).__name__}: {exc!r}"
+        ) from exc
 
     fila_por_clave = {}
     for indice, fila in enumerate(filas[1:], start=2):  # las filas de Sheets arrancan en 1, y la 1 es encabezado
@@ -128,4 +132,6 @@ def guardar_precios_referencia(items: list):
         if filas_nuevas:
             hoja.append_rows(filas_nuevas)
     except Exception as exc:
-        raise ErrorPreciosReferencia(f"No se pudo guardar en la planilla de precios de referencia: {exc}") from exc
+        raise ErrorPreciosReferencia(
+            f"No se pudo guardar en la planilla de precios de referencia: {type(exc).__name__}: {exc!r}"
+        ) from exc
