@@ -22,7 +22,7 @@
     flex-direction: column;
     gap: 24px;
     width: 100%;
-    max-width: 760px;
+    max-width: 1300px;
   }
   .tarjeta {
     background: #ffffff;
@@ -30,6 +30,10 @@
     box-shadow: 0 10px 30px rgba(0,0,0,0.08);
     padding: 40px;
     width: 100%;
+  }
+  .ancho-angosto {
+    max-width: 520px;
+    margin: 0 auto;
   }
   h1 {
     font-size: 26px;
@@ -199,15 +203,18 @@
   table.tabla-comparacion {
     border-collapse: collapse;
     width: 100%;
-    font-size: 13px;
+    table-layout: fixed;
+    font-size: 12px;
     font-variant-numeric: tabular-nums;
   }
   table.tabla-comparacion th, table.tabla-comparacion td {
     border-bottom: 1px solid #dbe1e8;
     border-right: 1px solid #dbe1e8;
-    padding: 7px 8px;
+    padding: 5px 4px;
     text-align: center;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   table.tabla-comparacion th:last-child, table.tabla-comparacion td:last-child { border-right: none; }
   table.tabla-comparacion thead th {
@@ -220,26 +227,25 @@
   table.tabla-comparacion td.descripcion {
     text-align: left;
     white-space: normal;
-    min-width: 220px;
+    overflow: visible;
   }
   table.tabla-comparacion td.precio-referencia { color: #5a6b8c; }
   table.tabla-comparacion td.mejor-precio { font-weight: 700; color: #1e7a46; }
   table.tabla-comparacion input[type=number] {
-    width: 92px;
-    padding: 5px 6px;
+    width: 100%;
+    padding: 4px 3px;
     border: 1px solid #b7c3dd;
     border-radius: 6px;
-    font-size: 13px;
+    font-size: 12px;
   }
   table.tabla-comparacion input.nombre-proveedor {
     width: 100%;
-    min-width: 92px;
     border: none;
     background: transparent;
     font-weight: 600;
     text-align: center;
     color: #1a2b4c;
-    font-size: 13px;
+    font-size: 12px;
   }
   table.tabla-comparacion input.nombre-proveedor:focus { outline: 1px solid #4f7cff; border-radius: 4px; }
 
@@ -270,46 +276,50 @@
 <div class="contenedor">
 
   <div class="tarjeta">
-    <h1>Pedido de Cotización → Excel</h1>
-    <p class="subtitulo">Subí el PDF del F.41 y descargá la planilla lista para cotizar.</p>
+    <div class="ancho-angosto">
+      <h1>Pedido de Cotización → Excel</h1>
+      <p class="subtitulo">Subí el PDF del F.41 y descargá la planilla lista para cotizar.</p>
 
-    <div class="mensaje" id="mensaje"></div>
+      <div class="mensaje" id="mensaje"></div>
 
-    <form id="formulario" action="/convertir" method="post" enctype="multipart/form-data">
-      <label class="zona" id="zona" for="archivo">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#4f7cff" stroke-width="1.8">
-          <path d="M12 3v12m0-12 4 4m-4-4-4 4" stroke-linecap="round" stroke-linejoin="round"/>
-          <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        <div class="texto-principal">Hacé clic o arrastrá el PDF acá</div>
-        <div class="texto-secundario">Solo archivos .pdf</div>
-        <div id="nombre-archivo"></div>
-      </label>
-      <input type="file" id="archivo" name="pdf" accept="application/pdf,.pdf" required>
-      <button type="submit" id="boton" disabled>Convertir a Excel</button>
-    </form>
-    <div class="cargando" id="cargando">Convirtiendo, un momento…</div>
-    <div class="resultados" id="resultados"></div>
+      <form id="formulario" action="/convertir" method="post" enctype="multipart/form-data">
+        <label class="zona" id="zona" for="archivo">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#4f7cff" stroke-width="1.8">
+            <path d="M12 3v12m0-12 4 4m-4-4-4 4" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <div class="texto-principal">Hacé clic o arrastrá el PDF acá</div>
+          <div class="texto-secundario">Solo archivos .pdf</div>
+          <div id="nombre-archivo"></div>
+        </label>
+        <input type="file" id="archivo" name="pdf" accept="application/pdf,.pdf" required>
+        <button type="submit" id="boton" disabled>Convertir a Excel</button>
+      </form>
+      <div class="cargando" id="cargando">Convirtiendo, un momento…</div>
+      <div class="resultados" id="resultados"></div>
+    </div>
   </div>
 
   <div class="tarjeta">
-    <h2>Comparar precios de proveedores</h2>
-    <p class="subtitulo">Subí el PDF del F.41. Los precios de referencia de la vez anterior aparecen solos — no hace falta subir ningún otro archivo.</p>
+    <div class="ancho-angosto">
+      <h2>Comparar precios de proveedores</h2>
+      <p class="subtitulo">Subí el PDF del F.41. Los precios de referencia de la vez anterior aparecen solos — no hace falta subir ningún otro archivo.</p>
 
-    <div class="mensaje" id="mensaje-comparar"></div>
+      <div class="mensaje" id="mensaje-comparar"></div>
 
-    <form id="formulario-comparar" action="/items_para_comparar" method="post" enctype="multipart/form-data">
-      <div class="campo-archivo">
-        <label class="etiqueta-campo" for="pdf-comparar">PDF del F.41</label>
-        <label class="selector" for="pdf-comparar">
-          <span class="nombre" id="nombre-pdf-comparar">Ningún archivo elegido</span>
-          <span class="boton-elegir">Elegir PDF</span>
-        </label>
-        <input type="file" id="pdf-comparar" name="pdf" accept="application/pdf,.pdf" required>
-      </div>
-      <button type="submit" id="boton-comparar">Cargar ítems</button>
-    </form>
-    <div class="cargando" id="cargando-comparar">Cargando los ítems, un momento…</div>
+      <form id="formulario-comparar" action="/items_para_comparar" method="post" enctype="multipart/form-data">
+        <div class="campo-archivo">
+          <label class="etiqueta-campo" for="pdf-comparar">PDF del F.41</label>
+          <label class="selector" for="pdf-comparar">
+            <span class="nombre" id="nombre-pdf-comparar">Ningún archivo elegido</span>
+            <span class="boton-elegir">Elegir PDF</span>
+          </label>
+          <input type="file" id="pdf-comparar" name="pdf" accept="application/pdf,.pdf" required>
+        </div>
+        <button type="submit" id="boton-comparar">Cargar ítems</button>
+      </form>
+      <div class="cargando" id="cargando-comparar">Cargando los ítems, un momento…</div>
+    </div>
     <div id="zona-tabla-comparar"></div>
   </div>
 
@@ -452,6 +462,15 @@
 
     const tabla = document.createElement('table');
     tabla.className = 'tabla-comparacion';
+
+    const colgroup = document.createElement('colgroup');
+    const anchos = [5, 9, 25, 5, 9, 8, 8, 8, 8, 8.5, 6.5];
+    anchos.forEach(porcentaje => {
+      const col = document.createElement('col');
+      col.style.width = porcentaje + '%';
+      colgroup.appendChild(col);
+    });
+    tabla.appendChild(colgroup);
 
     const thead = document.createElement('thead');
     const filaEncabezado = document.createElement('tr');
