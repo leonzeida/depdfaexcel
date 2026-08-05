@@ -105,7 +105,7 @@ def items_para_comparar():
     try:
         referencias = leer_precios_referencia()
     except ErrorPreciosReferencia as exc:
-        app.logger.error("Fallo leyendo precios de referencia: %s", exc)
+        print(f"[precios-referencia] Fallo leyendo: {exc}", file=sys.stderr, flush=True)
         return jsonify(
             error="No se pudo conectar con la planilla de precios de referencia. Probá de nuevo en un momento."
         ), 502
@@ -150,7 +150,7 @@ def guardar_referencia():
     try:
         guardar_precios_referencia(items_validos)
     except ErrorPreciosReferencia as exc:
-        app.logger.error("Fallo guardando precios de referencia: %s", exc)
+        print(f"[precios-referencia] Fallo guardando: {exc}", file=sys.stderr, flush=True)
         return jsonify(
             error="No se pudo guardar en la planilla de precios de referencia. Probá de nuevo en un momento."
         ), 502
