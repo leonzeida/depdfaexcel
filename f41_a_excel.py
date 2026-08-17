@@ -384,7 +384,7 @@ def escribir_planilla_trabajo(filas: list, encabezado: dict, salida: Path):
         c_precio_ref = ws.cell(row=fila, column=7)
         c_precio_ref.alignment = centrado
         c_precio_ref.number_format = FMT_MONEDA_ARS
-        c_pcio_vta = ws.cell(row=fila, column=8, value=f"=E{fila}*1.5")
+        c_pcio_vta = ws.cell(row=fila, column=8, value=f"=G{fila}")
         c_pcio_vta.alignment = centrado
         c_pcio_vta.number_format = FMT_MONEDA_ARS
         c_total_vta = ws.cell(row=fila, column=9, value=f"=H{fila}*D{fila}")
