@@ -431,17 +431,6 @@ def escribir_planilla_trabajo(filas: list, encabezado: dict, salida: Path):
     wb.save(salida)
 
 
-def clave_item(codigo, descripcion) -> tuple:
-    # El código del F.41 es un código de categoría, no de producto: el
-    # mismo código puede repetirse en varios renglones con descripciones
-    # completamente distintas (confirmado con datos reales: "4.01.008.066"
-    # aparece en 4 items distintos de un mismo PDF). Por eso la clave para
-    # identificar "el mismo ítem" entre licitaciones es código + descripción,
-    # no el código solo. La usa sheets_referencia.py para el comparador de
-    # precios.
-    return (str(codigo), (descripcion or "").strip())
-
-
 def procesar(pdf_path: Path):
     print(f"Procesando: {pdf_path.name}")
     filas = extraer_pdf(pdf_path)
