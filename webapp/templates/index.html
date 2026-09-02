@@ -26,7 +26,7 @@
     flex-direction: column;
     gap: 24px;
     width: 100%;
-    max-width: 1300px;
+    max-width: 1700px;
   }
   .tarjeta {
     background: #ffffff;
@@ -202,6 +202,16 @@
     overflow-x: auto;
     border: 1px solid #dbe1e8;
     border-radius: 10px;
+  }
+  /* La grilla de jspreadsheet siempre dibuja su propio fondo claro (blanco
+     / gris clarito), sin importar el tema de la página. Si dejamos que el
+     texto herede nuestro color de modo oscuro (casi blanco), queda texto
+     claro sobre fondo claro y no se lee. Por eso el color de letra de la
+     grilla se fija siempre, en los dos temas. */
+  .grilla-comparacion-wrap table,
+  .grilla-comparacion-wrap td,
+  .grilla-comparacion-wrap th {
+    color: #1a2b4c;
   }
   #boton-guardar-referencia {
     max-width: 520px;
