@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PDF a Excel</title>
+<link rel="stylesheet" href="https://bossanova.uk/jspreadsheet/v5/jspreadsheet.css" type="text/css">
+<link rel="stylesheet" href="https://jsuites.net/v5/jsuites.css" type="text/css">
+<script src="https://bossanova.uk/jspreadsheet/v5/jspreadsheet.js"></script>
+<script src="https://jsuites.net/v5/jsuites.js"></script>
 <style>
   * { box-sizing: border-box; }
   body {
@@ -22,7 +26,7 @@
     flex-direction: column;
     gap: 24px;
     width: 100%;
-    max-width: 520px;
+    max-width: 1300px;
   }
   .tarjeta {
     background: #ffffff;
@@ -30,6 +34,10 @@
     box-shadow: 0 10px 30px rgba(0,0,0,0.08);
     padding: 40px;
     width: 100%;
+  }
+  .ancho-angosto {
+    max-width: 520px;
+    margin: 0 auto;
   }
   h1 {
     font-size: 26px;
@@ -180,6 +188,32 @@
   }
   .boton-descarga:hover { background: #248a56; }
 
+  .titulo-comparacion {
+    font-family: "Courier New", Courier, monospace;
+    font-weight: 700;
+    text-align: center;
+    background: #d4ea6b;
+    color: #33430f;
+    border-radius: 8px;
+    padding: 10px;
+    margin: 0 0 14px;
+  }
+  .grilla-comparacion-wrap {
+    overflow-x: auto;
+    border: 1px solid #dbe1e8;
+    border-radius: 10px;
+  }
+  #boton-guardar-referencia {
+    max-width: 520px;
+    margin: 20px auto 0;
+  }
+  .ayuda-formulas {
+    text-align: center;
+    color: #8291ab;
+    font-size: 13px;
+    margin: 10px 0 0;
+  }
+
   @media (prefers-color-scheme: dark) {
     body { background: #10131a; color: #eef2f7; }
     .tarjeta { background: #1b2030; box-shadow: none; }
@@ -192,6 +226,9 @@
     .campo-archivo label.etiqueta-campo { color: #eef2f7; }
     .campo-archivo .selector { border-color: #333d55; }
     .campo-archivo .selector:hover { background: #232a3d; border-color: #4f7cff; }
+    .grilla-comparacion-wrap { border-color: #333d55; }
+    .titulo-comparacion { background: #3a4522; color: #d4ea6b; }
+    .ayuda-formulas { color: #6b7793; }
   }
 </style>
 </head>
@@ -199,26 +236,52 @@
 <div class="contenedor">
 
   <div class="tarjeta">
-    <h1>Pedido de Cotización → Excel</h1>
-    <p class="subtitulo">Subí el PDF del F.41 y descargá la planilla lista para cotizar.</p>
+    <div class="ancho-angosto">
+      <h1>Pedido de Cotización → Excel</h1>
+      <p class="subtitulo">Subí el PDF del F.41 y descargá la planilla lista para cotizar.</p>
 
-    <div class="mensaje" id="mensaje"></div>
+      <div class="mensaje" id="mensaje"></div>
 
-    <form id="formulario" action="/convertir" method="post" enctype="multipart/form-data">
-      <label class="zona" id="zona" for="archivo">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#4f7cff" stroke-width="1.8">
-          <path d="M12 3v12m0-12 4 4m-4-4-4 4" stroke-linecap="round" stroke-linejoin="round"/>
-          <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        <div class="texto-principal">Hacé clic o arrastrá el PDF acá</div>
-        <div class="texto-secundario">Solo archivos .pdf</div>
-        <div id="nombre-archivo"></div>
-      </label>
-      <input type="file" id="archivo" name="pdf" accept="application/pdf,.pdf" required>
-      <button type="submit" id="boton" disabled>Convertir a Excel</button>
-    </form>
-    <div class="cargando" id="cargando">Convirtiendo, un momento…</div>
-    <div class="resultados" id="resultados"></div>
+      <form id="formulario" action="/convertir" method="post" enctype="multipart/form-data">
+        <label class="zona" id="zona" for="archivo">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#4f7cff" stroke-width="1.8">
+            <path d="M12 3v12m0-12 4 4m-4-4-4 4" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <div class="texto-principal">Hacé clic o arrastrá el PDF acá</div>
+          <div class="texto-secundario">Solo archivos .pdf</div>
+          <div id="nombre-archivo"></div>
+        </label>
+        <input type="file" id="archivo" name="pdf" accept="application/pdf,.pdf" required>
+        <button type="submit" id="boton" disabled>Convertir a Excel</button>
+      </form>
+      <div class="cargando" id="cargando">Convirtiendo, un momento…</div>
+      <div class="resultados" id="resultados"></div>
+    </div>
+  </div>
+
+  <div class="tarjeta">
+    <div class="ancho-angosto">
+      <h2>Comparar precios de proveedores</h2>
+      <p class="subtitulo">Subí el PDF del F.41. El último precio y el precio de referencia de la vez anterior aparecen solos.</p>
+
+      <div class="mensaje" id="mensaje-comparar"></div>
+
+      <form id="formulario-comparar" action="/items_para_comparar" method="post" enctype="multipart/form-data">
+        <div class="campo-archivo">
+          <label class="etiqueta-campo" for="pdf-comparar">PDF del F.41</label>
+          <label class="selector" for="pdf-comparar">
+            <span class="nombre" id="nombre-pdf-comparar">Ningún archivo elegido</span>
+            <span class="boton-elegir">Elegir PDF</span>
+          </label>
+          <input type="file" id="pdf-comparar" name="pdf" accept="application/pdf,.pdf" required>
+        </div>
+        <button type="submit" id="boton-comparar">Cargar ítems</button>
+      </form>
+      <div class="cargando" id="cargando-comparar">Cargando los ítems, un momento…</div>
+    </div>
+
+    <div id="zona-tabla-comparar"></div>
   </div>
 
 </div>
@@ -327,6 +390,183 @@
       boton.disabled = false;
       boton.textContent = 'Convertir a Excel';
     }
+  });
+
+  // --- Tarjeta 2: comparador de precios de proveedores (grilla con fórmulas + base de datos) ---
+  const MASCARA_PESOS = { mask: '#.##0,00', decimal: ',' };
+
+  function parsePesos(texto) {
+    if (texto === null || texto === undefined) return null;
+    texto = String(texto).trim();
+    if (texto === '') return null;
+    const limpio = texto.replace(/[^0-9,.\-]/g, '').replace(/\./g, '').replace(',', '.');
+    if (limpio === '' || limpio === '-') return null;
+    const valor = parseFloat(limpio);
+    return isNaN(valor) ? null : valor;
+  }
+
+  const formularioComparar = document.getElementById('formulario-comparar');
+  const botonComparar = document.getElementById('boton-comparar');
+  const cargandoComparar = document.getElementById('cargando-comparar');
+  const mensajeComparar = document.getElementById('mensaje-comparar');
+  const zonaTablaComparar = document.getElementById('zona-tabla-comparar');
+  const pdfComparar = document.getElementById('pdf-comparar');
+  const nombrePdfComparar = document.getElementById('nombre-pdf-comparar');
+
+  let worksheetActual = null;
+  let itemsActuales = [];
+
+  pdfComparar.addEventListener('change', () => {
+    nombrePdfComparar.textContent = pdfComparar.files[0] ? pdfComparar.files[0].name : 'Ningún archivo elegido';
+  });
+
+  function crearGrillaComparacion(titulo, items) {
+    zonaTablaComparar.innerHTML = '';
+    itemsActuales = items;
+
+    const tituloEl = document.createElement('p');
+    tituloEl.className = 'titulo-comparacion';
+    tituloEl.textContent = titulo;
+    zonaTablaComparar.appendChild(tituloEl);
+
+    const envoltorio = document.createElement('div');
+    envoltorio.className = 'grilla-comparacion-wrap';
+    zonaTablaComparar.appendChild(envoltorio);
+
+    const datos = items.map((item, indice) => {
+      const fila = indice + 1;
+      return [
+        item.rg,
+        item.codigo,
+        item.descripcion,
+        item.cantidad,
+        item.ultimo_precio === null || item.ultimo_precio === undefined ? '' : item.ultimo_precio,
+        item.precio_referencia === null || item.precio_referencia === undefined ? '' : item.precio_referencia,
+        '', '', '', '',
+        '=MIN(G' + fila + ':J' + fila + ')',
+        '=K' + fila,
+      ];
+    });
+
+    const instancias = jspreadsheet(envoltorio, {
+      worksheets: [
+        {
+          data: datos,
+          columnSorting: false,
+          columns: [
+            { type: 'numeric', title: 'Renglón', width: 70, readOnly: true },
+            { type: 'text', title: 'Código', width: 100, readOnly: true },
+            { type: 'text', title: 'Descripción', width: 260, readOnly: true },
+            { type: 'numeric', title: 'Cantidad', width: 80, readOnly: true },
+            Object.assign({ type: 'text', title: 'Último precio', width: 120, readOnly: true }, MASCARA_PESOS),
+            Object.assign({ type: 'text', title: 'Precio de referencia', width: 140 }, MASCARA_PESOS),
+            Object.assign({ type: 'text', title: 'Proveedor 1', width: 120 }, MASCARA_PESOS),
+            Object.assign({ type: 'text', title: 'Proveedor 2', width: 120 }, MASCARA_PESOS),
+            Object.assign({ type: 'text', title: 'Proveedor 3', width: 120 }, MASCARA_PESOS),
+            Object.assign({ type: 'text', title: 'Proveedor 4', width: 120 }, MASCARA_PESOS),
+            Object.assign({ type: 'text', title: 'Mejor precio nuevo', width: 140 }, MASCARA_PESOS),
+            Object.assign({ type: 'text', title: 'Precio final', width: 130 }, MASCARA_PESOS),
+          ],
+        },
+      ],
+    });
+    worksheetActual = instancias[0];
+
+    const ayuda = document.createElement('p');
+    ayuda.className = 'ayuda-formulas';
+    ayuda.textContent = 'Es una grilla como Excel: podés escribir fórmulas en cualquier celda (ej. =G1*1.1).';
+    zonaTablaComparar.appendChild(ayuda);
+
+    const botonGuardar = document.createElement('button');
+    botonGuardar.id = 'boton-guardar-referencia';
+    botonGuardar.textContent = 'Guardar precios de referencia';
+    botonGuardar.addEventListener('click', guardarReferencia);
+    zonaTablaComparar.appendChild(botonGuardar);
+  }
+
+  function leerFilaParaGuardar(item, indice) {
+    const fila = indice + 1;
+    const columnasProveedor = ['G', 'H', 'I', 'J'];
+    const algunProveedorCargado = columnasProveedor.some(
+      col => (worksheetActual.getValue(col + fila) || '').toString().trim() !== ''
+    );
+    const rawFinal = (worksheetActual.getValue('L' + fila) || '').toString().trim();
+    const esValorPorDefecto = rawFinal === ('=K' + fila);
+
+    if (!algunProveedorCargado && esValorPorDefecto) {
+      return null; // fila sin cotizar todavía, no se guarda (evita guardar un precio fantasma)
+    }
+
+    const precioFinal = parsePesos(worksheetActual.getValue('L' + fila, true));
+    if (precioFinal === null) return null;
+
+    const precioReferencia = parsePesos(worksheetActual.getValue('F' + fila, true));
+
+    return {
+      codigo: item.codigo,
+      descripcion: item.descripcion,
+      precio_referencia: precioReferencia,
+      ultimo_precio: precioFinal,
+    };
+  }
+
+  async function guardarReferencia() {
+    const boton = document.getElementById('boton-guardar-referencia');
+    const itemsAGuardar = itemsActuales
+      .map((item, indice) => leerFilaParaGuardar(item, indice))
+      .filter(Boolean);
+
+    if (!itemsAGuardar.length) {
+      mostrarMensaje(mensajeComparar, 'Completá al menos un precio final antes de guardar.', 'error');
+      return;
+    }
+
+    boton.disabled = true;
+    boton.textContent = 'Guardando…';
+    try {
+      const respuesta = await fetch('/guardar_referencia', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: itemsAGuardar }),
+      });
+      const cuerpo = await respuesta.json().catch(() => ({}));
+      if (!respuesta.ok) {
+        mostrarMensaje(mensajeComparar, cuerpo.error || 'Ocurrió un error al guardar.', 'error');
+      } else {
+        mostrarMensaje(mensajeComparar, '✅ Se guardaron ' + cuerpo.cantidad + ' precio(s) de referencia.', 'exito');
+      }
+    } catch (err) {
+      mostrarMensaje(mensajeComparar, 'No se pudo conectar con la página. Volvé a intentar.', 'error');
+    }
+    boton.disabled = false;
+    boton.textContent = 'Guardar precios de referencia';
+  }
+
+  formularioComparar.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    ocultarMensaje(mensajeComparar);
+    zonaTablaComparar.innerHTML = '';
+    botonComparar.disabled = true;
+    botonComparar.textContent = 'Cargando…';
+    cargandoComparar.style.display = 'block';
+
+    try {
+      const datos = new FormData(formularioComparar);
+      const respuesta = await fetch('/items_para_comparar', { method: 'POST', body: datos });
+      const cuerpo = await respuesta.json().catch(() => ({}));
+      cargandoComparar.style.display = 'none';
+
+      if (!respuesta.ok) {
+        mostrarMensaje(mensajeComparar, cuerpo.error || 'Ocurrió un error al procesar el archivo.', 'error');
+      } else {
+        crearGrillaComparacion(cuerpo.titulo, cuerpo.items);
+      }
+    } catch (err) {
+      cargandoComparar.style.display = 'none';
+      mostrarMensaje(mensajeComparar, 'No se pudo conectar con la página. Volvé a intentar.', 'error');
+    }
+    botonComparar.disabled = false;
+    botonComparar.textContent = 'Cargar ítems';
   });
 </script>
 </body>

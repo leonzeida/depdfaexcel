@@ -2,3 +2,4 @@ Flask
 pdfplumber
 openpyxl
 gunicorn
+psycopg[binary]
