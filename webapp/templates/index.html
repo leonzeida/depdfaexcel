@@ -465,8 +465,8 @@
         ultimo, // Precio de referencia (editable, arranca igual al último precio, no se guarda)
         '', '', '', '',
         '=MIN(G' + fila + ':J' + fila + ')',
-        1,
-        '=K' + fila + '*L' + fila,
+        100,
+        '=K' + fila + '*(L' + fila + '/100)',
       ];
     });
 
@@ -497,7 +497,7 @@
 
     const ayuda = document.createElement('p');
     ayuda.className = 'ayuda-formulas';
-    ayuda.textContent = 'Es una grilla como Excel: podés escribir fórmulas en cualquier celda (ej. =G1*1.1). Precio final = Mejor precio nuevo × %.';
+    ayuda.textContent = 'Es una grilla como Excel: podés escribir fórmulas en cualquier celda. Precio final = Mejor precio nuevo × (% / 100). Ej.: dejá 100 para el mismo precio, poné 120 para un 20% más.';
     zonaTablaComparar.appendChild(ayuda);
 
     botonGuardarReferencia.disabled = false;
@@ -510,7 +510,7 @@
       col => (worksheetActual.getValue(col + fila) || '').toString().trim() !== ''
     );
     const rawFinal = (worksheetActual.getValue('M' + fila) || '').toString().trim();
-    const esValorPorDefecto = rawFinal === ('=K' + fila + '*L' + fila);
+    const esValorPorDefecto = rawFinal === ('=K' + fila + '*(L' + fila + '/100)');
 
     if (!algunProveedorCargado && esValorPorDefecto) {
       return null; // fila sin cotizar todavía, no se guarda (evita guardar un precio fantasma)
