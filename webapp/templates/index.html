@@ -26,7 +26,7 @@
     flex-direction: column;
     gap: 24px;
     width: 100%;
-    max-width: 1700px;
+    max-width: 1750px;
   }
   .tarjeta {
     background: #ffffff;
@@ -213,9 +213,15 @@
   .grilla-comparacion-wrap th {
     color: #1a2b4c;
   }
-  #boton-guardar-referencia {
-    max-width: 520px;
-    margin: 20px auto 0;
+  .fila-botones-comparar {
+    display: flex;
+    gap: 12px;
+    margin-top: 24px;
+  }
+  .fila-botones-comparar button {
+    width: auto;
+    flex: 1;
+    margin-top: 0;
   }
   .ayuda-formulas {
     text-align: center;
@@ -273,7 +279,7 @@
   <div class="tarjeta">
     <div class="ancho-angosto">
       <h2>Comparar precios de proveedores</h2>
-      <p class="subtitulo">Subí el PDF del F.41. El último precio y el precio de referencia de la vez anterior aparecen solos.</p>
+      <p class="subtitulo">Subí el PDF del F.41. El último precio de la vez anterior aparece solo.</p>
 
       <div class="mensaje" id="mensaje-comparar"></div>
 
@@ -286,8 +292,11 @@
           </label>
           <input type="file" id="pdf-comparar" name="pdf" accept="application/pdf,.pdf" required>
         </div>
-        <button type="submit" id="boton-comparar">Cargar ítems</button>
       </form>
+      <div class="fila-botones-comparar">
+        <button type="submit" form="formulario-comparar" id="boton-comparar">Cargar ítems</button>
+        <button type="button" id="boton-guardar-referencia" disabled>Guardar precios de referencia</button>
+      </div>
       <div class="cargando" id="cargando-comparar">Cargando los ítems, un momento…</div>
     </div>
 
@@ -417,6 +426,7 @@
 
   const formularioComparar = document.getElementById('formulario-comparar');
   const botonComparar = document.getElementById('boton-comparar');
+  const botonGuardarReferencia = document.getElementById('boton-guardar-referencia');
   const cargandoComparar = document.getElementById('cargando-comparar');
   const mensajeComparar = document.getElementById('mensaje-comparar');
   const zonaTablaComparar = document.getElementById('zona-tabla-comparar');
@@ -445,16 +455,18 @@
 
     const datos = items.map((item, indice) => {
       const fila = indice + 1;
+      const ultimo = item.ultimo_precio === null || item.ultimo_precio === undefined ? '' : item.ultimo_precio;
       return [
         item.rg,
         item.codigo,
         item.descripcion,
         item.cantidad,
-        item.ultimo_precio === null || item.ultimo_precio === undefined ? '' : item.ultimo_precio,
-        item.precio_referencia === null || item.precio_referencia === undefined ? '' : item.precio_referencia,
+        ultimo, // Último precio (de solo lectura, historial)
+        ultimo, // Precio de referencia (editable, arranca igual al último precio, no se guarda)
         '', '', '', '',
         '=MIN(G' + fila + ':J' + fila + ')',
-        '=K' + fila,
+        1,
+        '=K' + fila + '*L' + fila,
       ];
     });
 
@@ -475,6 +487,7 @@
             Object.assign({ type: 'text', title: 'Proveedor 3', width: 120 }, MASCARA_PESOS),
             Object.assign({ type: 'text', title: 'Proveedor 4', width: 120 }, MASCARA_PESOS),
             Object.assign({ type: 'text', title: 'Mejor precio nuevo', width: 140 }, MASCARA_PESOS),
+            { type: 'text', title: '%', width: 70 },
             Object.assign({ type: 'text', title: 'Precio final', width: 130 }, MASCARA_PESOS),
           ],
         },
@@ -484,14 +497,10 @@
 
     const ayuda = document.createElement('p');
     ayuda.className = 'ayuda-formulas';
-    ayuda.textContent = 'Es una grilla como Excel: podés escribir fórmulas en cualquier celda (ej. =G1*1.1).';
+    ayuda.textContent = 'Es una grilla como Excel: podés escribir fórmulas en cualquier celda (ej. =G1*1.1). Precio final = Mejor precio nuevo × %.';
     zonaTablaComparar.appendChild(ayuda);
 
-    const botonGuardar = document.createElement('button');
-    botonGuardar.id = 'boton-guardar-referencia';
-    botonGuardar.textContent = 'Guardar precios de referencia';
-    botonGuardar.addEventListener('click', guardarReferencia);
-    zonaTablaComparar.appendChild(botonGuardar);
+    botonGuardarReferencia.disabled = false;
   }
 
   function leerFilaParaGuardar(item, indice) {
@@ -500,28 +509,26 @@
     const algunProveedorCargado = columnasProveedor.some(
       col => (worksheetActual.getValue(col + fila) || '').toString().trim() !== ''
     );
-    const rawFinal = (worksheetActual.getValue('L' + fila) || '').toString().trim();
-    const esValorPorDefecto = rawFinal === ('=K' + fila);
+    const rawFinal = (worksheetActual.getValue('M' + fila) || '').toString().trim();
+    const esValorPorDefecto = rawFinal === ('=K' + fila + '*L' + fila);
 
     if (!algunProveedorCargado && esValorPorDefecto) {
       return null; // fila sin cotizar todavía, no se guarda (evita guardar un precio fantasma)
     }
 
-    const precioFinal = parsePesos(worksheetActual.getValue('L' + fila, true));
+    const precioFinal = parsePesos(worksheetActual.getValue('M' + fila, true));
     if (precioFinal === null) return null;
-
-    const precioReferencia = parsePesos(worksheetActual.getValue('F' + fila, true));
 
     return {
       codigo: item.codigo,
       descripcion: item.descripcion,
-      precio_referencia: precioReferencia,
       ultimo_precio: precioFinal,
     };
   }
 
   async function guardarReferencia() {
-    const boton = document.getElementById('boton-guardar-referencia');
+    if (!worksheetActual) return;
+    const boton = botonGuardarReferencia;
     const itemsAGuardar = itemsActuales
       .map((item, indice) => leerFilaParaGuardar(item, indice))
       .filter(Boolean);
@@ -552,10 +559,14 @@
     boton.textContent = 'Guardar precios de referencia';
   }
 
+  botonGuardarReferencia.addEventListener('click', guardarReferencia);
+
   formularioComparar.addEventListener('submit', async (e) => {
     e.preventDefault();
     ocultarMensaje(mensajeComparar);
     zonaTablaComparar.innerHTML = '';
+    worksheetActual = null;
+    botonGuardarReferencia.disabled = true;
     botonComparar.disabled = true;
     botonComparar.textContent = 'Cargando…';
     cargandoComparar.style.display = 'block';

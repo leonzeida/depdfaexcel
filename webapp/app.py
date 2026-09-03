@@ -119,7 +119,6 @@ def items_para_comparar():
                 "codigo": item["codigo"],
                 "descripcion": item["descripcion"],
                 "cantidad": item["cantidad"],
-                "precio_referencia": datos.get("precio_referencia"),
                 "ultimo_precio": datos.get("ultimo_precio"),
             }
         )
@@ -144,18 +143,10 @@ def guardar_referencia():
         except (TypeError, ValueError):
             continue
 
-        precio_referencia = item.get("precio_referencia")
-        if precio_referencia is not None:
-            try:
-                precio_referencia = float(precio_referencia)
-            except (TypeError, ValueError):
-                precio_referencia = None
-
         items_validos.append(
             {
                 "codigo": codigo,
                 "descripcion": descripcion,
-                "precio_referencia": precio_referencia,
                 "ultimo_precio": ultimo_precio,
             }
         )

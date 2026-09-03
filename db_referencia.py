@@ -24,7 +24,6 @@ _CREAR_TABLA = """
 CREATE TABLE IF NOT EXISTS precios_referencia (
     codigo TEXT NOT NULL,
     descripcion TEXT NOT NULL,
-    precio_referencia NUMERIC(12,2),
     ultimo_precio NUMERIC(12,2),
     actualizado DATE,
     PRIMARY KEY (codigo, descripcion)
@@ -32,11 +31,10 @@ CREATE TABLE IF NOT EXISTS precios_referencia (
 """
 
 _UPSERT = """
-INSERT INTO precios_referencia (codigo, descripcion, precio_referencia, ultimo_precio, actualizado)
-VALUES (%s, %s, %s, %s, %s)
+INSERT INTO precios_referencia (codigo, descripcion, ultimo_precio, actualizado)
+VALUES (%s, %s, %s, %s)
 ON CONFLICT (codigo, descripcion) DO UPDATE SET
     ultimo_precio = EXCLUDED.ultimo_precio,
-    precio_referencia = COALESCE(EXCLUDED.precio_referencia, precios_referencia.precio_referencia),
     actualizado = EXCLUDED.actualizado;
 """
 
@@ -63,12 +61,12 @@ def _conectar():
 
 
 def leer_precios_referencia() -> dict:
-    """Devuelve {(codigo, descripcion): {"precio_referencia": float|None, "ultimo_precio": float|None}}."""
+    """Devuelve {(codigo, descripcion): {"ultimo_precio": float|None}}."""
     conn = None
     try:
         conn = _conectar()
         cur = conn.cursor()
-        cur.execute("SELECT codigo, descripcion, precio_referencia, ultimo_precio FROM precios_referencia;")
+        cur.execute("SELECT codigo, descripcion, ultimo_precio FROM precios_referencia;")
         filas = cur.fetchall()
         cur.close()
     except ErrorPreciosReferencia:
@@ -82,26 +80,22 @@ def leer_precios_referencia() -> dict:
             conn.close()
 
     precios = {}
-    for codigo, descripcion, precio_referencia, ultimo_precio in filas:
+    for codigo, descripcion, ultimo_precio in filas:
         precios[clave_item(codigo, descripcion)] = {
-            "precio_referencia": float(precio_referencia) if precio_referencia is not None else None,
             "ultimo_precio": float(ultimo_precio) if ultimo_precio is not None else None,
         }
     return precios
 
 
 def guardar_precios_referencia(items: list):
-    """Por cada {"codigo", "descripcion", "precio_referencia", "ultimo_precio"},
-    hace un upsert en la tabla. precio_referencia puede venir en None (no se
-    pisa el valor ya guardado); ultimo_precio siempre se guarda tal cual."""
+    """Por cada {"codigo", "descripcion", "ultimo_precio"}, hace un upsert
+    en la tabla (crea la fila si no existía, o actualiza ultimo_precio si
+    ya existía)."""
     if not items:
         return
 
     hoy = datetime.now(ZONA_HORARIA_ARGENTINA).date()
-    filas = [
-        (item["codigo"], item["descripcion"], item.get("precio_referencia"), item["ultimo_precio"], hoy)
-        for item in items
-    ]
+    filas = [(item["codigo"], item["descripcion"], item["ultimo_precio"], hoy) for item in items]
 
     conn = None
     try:
