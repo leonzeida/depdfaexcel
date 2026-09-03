@@ -472,11 +472,15 @@
     });
 
     const instancias = jspreadsheet(envoltorio, {
+      onevent: (nombreEvento, instancia, celda, x, y) => {
+        if (nombreEvento === 'onchange') {
+          actualizarColorPrecioFinal(instancia, parseInt(y, 10) + 1);
+        }
+      },
       worksheets: [
         {
           data: datos,
           columnSorting: false,
-          onchange: (instancia, celda, x, y) => actualizarColorPrecioFinal(instancia, parseInt(y, 10) + 1),
           columns: [
             { type: 'numeric', title: 'Renglón', width: 70, readOnly: true },
             { type: 'text', title: 'Código', width: 100, readOnly: true },
