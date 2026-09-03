@@ -229,6 +229,22 @@
     font-size: 13px;
     margin: 10px 0 0;
   }
+  .boton-descarga-discreta {
+    display: block;
+    width: auto;
+    margin: 14px auto 0;
+    padding: 8px 18px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #5a6b8c;
+    background: transparent;
+    border: 1px solid #b7c3dd;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .boton-descarga-discreta:hover { background: #f4f8ff; border-color: #4f7cff; color: #4f7cff; }
+  .boton-descarga-discreta:disabled { background: transparent; color: #b7c3dd; border-color: #dbe1e8; cursor: not-allowed; }
 
   @media (prefers-color-scheme: dark) {
     body { background: #10131a; color: #eef2f7; }
@@ -245,6 +261,9 @@
     .grilla-comparacion-wrap { border-color: #333d55; }
     .titulo-comparacion { background: #3a4522; color: #d4ea6b; }
     .ayuda-formulas { color: #6b7793; }
+    .boton-descarga-discreta { color: #9aa8c7; border-color: #333d55; }
+    .boton-descarga-discreta:hover { background: #232a3d; border-color: #4f7cff; color: #eef2f7; }
+    .boton-descarga-discreta:disabled { color: #4a5570; border-color: #262c3d; }
   }
 </style>
 </head>
@@ -435,6 +454,7 @@
 
   let worksheetActual = null;
   let itemsActuales = [];
+  let tituloActual = '';
 
   pdfComparar.addEventListener('change', () => {
     nombrePdfComparar.textContent = pdfComparar.files[0] ? pdfComparar.files[0].name : 'Ningún archivo elegido';
@@ -443,6 +463,7 @@
   function crearGrillaComparacion(titulo, items) {
     zonaTablaComparar.innerHTML = '';
     itemsActuales = items;
+    tituloActual = titulo;
 
     const tituloEl = document.createElement('p');
     tituloEl.className = 'titulo-comparacion';
@@ -525,7 +546,52 @@
     ayuda.textContent = 'Es una grilla como Excel: podés escribir fórmulas en cualquier celda. Precio final = Mejor precio nuevo + ese % de aumento. Ej.: dejá 0 para el mismo precio, poné 20 para sumarle un 20%. El Precio final aparece en verde si queda por debajo del Precio de referencia, y en rojo si queda igual o por arriba.';
     zonaTablaComparar.appendChild(ayuda);
 
+    const botonDescargarExcel = document.createElement('button');
+    botonDescargarExcel.type = 'button';
+    botonDescargarExcel.className = 'boton-descarga-discreta';
+    botonDescargarExcel.textContent = 'Descargar esta comparación como Excel';
+    botonDescargarExcel.addEventListener('click', descargarExcelComparacion);
+    zonaTablaComparar.appendChild(botonDescargarExcel);
+
     botonGuardarReferencia.disabled = false;
+  }
+
+  async function descargarExcelComparacion(evento) {
+    if (!worksheetActual) return;
+    const boton = evento.currentTarget;
+    boton.disabled = true;
+    boton.textContent = 'Generando…';
+
+    try {
+      const filas = worksheetActual.getData();
+      const respuesta = await fetch('/exportar_comparacion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ titulo: tituloActual, filas: filas }),
+      });
+      const cuerpo = await respuesta.json().catch(() => ({}));
+      if (!respuesta.ok) {
+        mostrarMensaje(mensajeComparar, cuerpo.error || 'No se pudo generar el Excel.', 'error');
+      } else {
+        const archivo = cuerpo.archivos[0];
+        const blob = base64AArchivo(
+          archivo.datos,
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        );
+        const url = URL.createObjectURL(blob);
+        const enlace = document.createElement('a');
+        enlace.href = url;
+        enlace.download = archivo.nombre;
+        document.body.appendChild(enlace);
+        enlace.click();
+        enlace.remove();
+        URL.revokeObjectURL(url);
+      }
+    } catch (err) {
+      mostrarMensaje(mensajeComparar, 'No se pudo conectar con la página. Volvé a intentar.', 'error');
+    }
+    boton.disabled = false;
+    boton.textContent = 'Descargar esta comparación como Excel';
   }
 
   function algunProveedorCargado(ws, fila) {

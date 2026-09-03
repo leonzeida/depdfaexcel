@@ -18,6 +18,7 @@ from flask import Flask, jsonify, render_template, request
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from f41_a_excel import (  # noqa: E402
     clave_item,
+    escribir_comparacion_precios_excel,
     escribir_notas_pedido,
     escribir_planilla_trabajo,
     expediente_slug,
@@ -172,6 +173,28 @@ def guardar_referencia():
         ), 502
 
     return jsonify(ok=True, cantidad=len(items_validos))
+
+
+@app.route("/exportar_comparacion", methods=["POST"])
+def exportar_comparacion():
+    cuerpo = request.get_json(silent=True) or {}
+    titulo = (cuerpo.get("titulo") or "").strip()
+    filas = cuerpo.get("filas") or []
+
+    if not isinstance(filas, list) or not filas:
+        return jsonify(error="No hay datos en la grilla para exportar."), 400
+
+    with tempfile.TemporaryDirectory() as tmp:
+        salida = Path(tmp) / "Comparacion de precios.xlsx"
+        try:
+            escribir_comparacion_precios_excel(titulo, filas, salida)
+        except Exception as exc:
+            print(f"[exportar-comparacion] Fallo generando el Excel: {exc}", file=sys.stderr, flush=True)
+            return jsonify(error="No se pudo generar el Excel de la comparación."), 500
+
+        datos = base64.b64encode(salida.read_bytes()).decode("ascii")
+
+    return jsonify(archivos=[{"etiqueta": "Comparación", "nombre": salida.name, "datos": datos}])
 
 
 def abrir_navegador():

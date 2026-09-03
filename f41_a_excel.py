@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo
 
 import pdfplumber
 from openpyxl import Workbook
+from openpyxl.formatting.rule import FormulaRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.worksheet.filters import AutoFilter, FilterColumn
 from openpyxl.worksheet.table import Table, TableStyleInfo
@@ -424,6 +425,80 @@ def escribir_planilla_trabajo(filas: list, encabezado: dict, salida: Path):
     anchos = {
         "A": 12, "B": 16, "C": 100, "D": 15.4, "E": 11.4,
         "F": 15.2, "G": 11.8, "H": 11.33, "I": 16.46, "J": 10.66,
+    }
+    for letra, ancho in anchos.items():
+        ws.column_dimensions[letra].width = ancho
+
+    wb.save(salida)
+
+
+ENCABEZADOS_COMPARACION = [
+    "Renglon", "Codigo", "Descripcion", "Cantidad", "Ultimo precio",
+    "Precio de referencia", "Proveedor 1", "Proveedor 2", "Proveedor 3",
+    "Proveedor 4", "Mejor precio nuevo", "%", "Precio final",
+]
+
+
+def escribir_comparacion_precios_excel(titulo: str, filas: list, salida: Path):
+    """Vuelca a un .xlsx la grilla del comparador de precios de la web tal
+    cual la ve el usuario (mismas 13 columnas). `filas` es una lista de
+    listas de 13 valores en el mismo orden que ENCABEZADOS_COMPARACION.
+
+    Las columnas "Mejor precio nuevo" (K) y "Precio final" (M) se vuelven
+    a generar acá con el número de fila real del Excel (los datos arrancan
+    en la fila 3 por el título y el encabezado), en vez de reusar el texto
+    de fórmula que manda la grilla (que numera sus filas desde 1) — si no,
+    las fórmulas quedarían apuntando a filas equivocadas al desplazarse.
+    El resto de las columnas se copian tal cual.
+    """
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Comparacion"
+
+    ws.merge_cells("A1:M1")
+    ws["A1"] = titulo
+    ws["A1"].font = Font(bold=True, size=13, color="000000")
+    ws["A1"].alignment = Alignment(horizontal="center")
+    ws["A1"].fill = PatternFill("solid", fgColor="D4EA6B")
+
+    fuente_encabezado = Font(bold=True, color="000000")
+    relleno_encabezado = PatternFill("solid", fgColor="D4EA6B")
+    centrado = Alignment(horizontal="center")
+
+    for col, titulo_columna in enumerate(ENCABEZADOS_COMPARACION, start=1):
+        c = ws.cell(row=2, column=col, value=titulo_columna)
+        c.font = fuente_encabezado
+        c.fill = relleno_encabezado
+        c.alignment = centrado
+
+    columnas_moneda = (5, 6, 7, 8, 9, 10, 11, 13)  # Ultimo precio .. Mejor precio nuevo, Precio final
+    fila_excel = 3
+    for fila in filas:
+        fila = (list(fila) + [None] * 13)[:13]
+        fila[10] = f"=MIN(G{fila_excel}:J{fila_excel})"
+        fila[12] = f"=K{fila_excel}*((L{fila_excel}+100)/100)"
+        for col, valor in enumerate(fila, start=1):
+            c = ws.cell(row=fila_excel, column=col, value=valor if valor != "" else None)
+            c.alignment = Alignment(horizontal="left", wrap_text=True) if col == 3 else centrado
+            if col in columnas_moneda:
+                c.number_format = FMT_MONEDA_ARS
+        fila_excel += 1
+    ultima_fila = fila_excel - 1
+
+    if ultima_fila >= 3:
+        verde = PatternFill(start_color="D4F4DD", end_color="D4F4DD", fill_type="solid")
+        rojo = PatternFill(start_color="FBDCDA", end_color="FBDCDA", fill_type="solid")
+        rango = f"M3:M{ultima_fila}"
+        ws.conditional_formatting.add(
+            rango, FormulaRule(formula=["M3<F3"], fill=verde, font=Font(color="1E7A46"))
+        )
+        ws.conditional_formatting.add(
+            rango, FormulaRule(formula=["M3>=F3"], fill=rojo, font=Font(color="A3231C"))
+        )
+
+    anchos = {
+        "A": 10, "B": 14, "C": 45, "D": 10, "E": 13, "F": 15,
+        "G": 12, "H": 12, "I": 12, "J": 12, "K": 15, "L": 8, "M": 13,
     }
     for letra, ancho in anchos.items():
         ws.column_dimensions[letra].width = ancho
