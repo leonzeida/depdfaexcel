@@ -466,7 +466,7 @@
         '', '', '', '',
         '=MIN(G' + fila + ':J' + fila + ')',
         0,
-        '=K' + fila + '*(1+(L' + fila + '/100))',
+        '=K' + fila + '*((L' + fila + '+100)/100)',
       ];
     });
 
@@ -510,7 +510,7 @@
       col => (worksheetActual.getValue(col + fila) || '').toString().trim() !== ''
     );
     const rawFinal = (worksheetActual.getValue('M' + fila) || '').toString().trim();
-    const esValorPorDefecto = rawFinal === ('=K' + fila + '*(1+(L' + fila + '/100))');
+    const esValorPorDefecto = rawFinal === ('=K' + fila + '*((L' + fila + '+100)/100)');
 
     if (!algunProveedorCargado && esValorPorDefecto) {
       return null; // fila sin cotizar todavía, no se guarda (evita guardar un precio fantasma)
