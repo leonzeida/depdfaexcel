@@ -30,11 +30,19 @@ CREATE TABLE IF NOT EXISTS precios_referencia (
 );
 """
 
+# ADD COLUMN IF NOT EXISTS para no romper la tabla ya creada en producción
+# (antes de agregar "porcentaje", el CREATE TABLE de arriba ya se había
+# corrido ahí, así que un CREATE TABLE nuevo no le agrega la columna sola).
+_AGREGAR_COLUMNA_PORCENTAJE = """
+ALTER TABLE precios_referencia ADD COLUMN IF NOT EXISTS porcentaje NUMERIC(12,2);
+"""
+
 _UPSERT = """
-INSERT INTO precios_referencia (codigo, descripcion, ultimo_precio, actualizado)
-VALUES (%s, %s, %s, %s)
+INSERT INTO precios_referencia (codigo, descripcion, ultimo_precio, porcentaje, actualizado)
+VALUES (%s, %s, %s, %s, %s)
 ON CONFLICT (codigo, descripcion) DO UPDATE SET
     ultimo_precio = EXCLUDED.ultimo_precio,
+    porcentaje = EXCLUDED.porcentaje,
     actualizado = EXCLUDED.actualizado;
 """
 
@@ -55,18 +63,19 @@ def _conectar():
         ) from exc
     cur = conn.cursor()
     cur.execute(_CREAR_TABLA)
+    cur.execute(_AGREGAR_COLUMNA_PORCENTAJE)
     cur.close()
     conn.commit()
     return conn
 
 
 def leer_precios_referencia() -> dict:
-    """Devuelve {(codigo, descripcion): {"ultimo_precio": float|None}}."""
+    """Devuelve {(codigo, descripcion): {"ultimo_precio": float|None, "porcentaje": float|None}}."""
     conn = None
     try:
         conn = _conectar()
         cur = conn.cursor()
-        cur.execute("SELECT codigo, descripcion, ultimo_precio FROM precios_referencia;")
+        cur.execute("SELECT codigo, descripcion, ultimo_precio, porcentaje FROM precios_referencia;")
         filas = cur.fetchall()
         cur.close()
     except ErrorPreciosReferencia:
@@ -80,22 +89,26 @@ def leer_precios_referencia() -> dict:
             conn.close()
 
     precios = {}
-    for codigo, descripcion, ultimo_precio in filas:
+    for codigo, descripcion, ultimo_precio, porcentaje in filas:
         precios[clave_item(codigo, descripcion)] = {
             "ultimo_precio": float(ultimo_precio) if ultimo_precio is not None else None,
+            "porcentaje": float(porcentaje) if porcentaje is not None else None,
         }
     return precios
 
 
 def guardar_precios_referencia(items: list):
-    """Por cada {"codigo", "descripcion", "ultimo_precio"}, hace un upsert
-    en la tabla (crea la fila si no existía, o actualiza ultimo_precio si
-    ya existía)."""
+    """Por cada {"codigo", "descripcion", "ultimo_precio", "porcentaje"},
+    hace un upsert en la tabla (crea la fila si no existía, o actualiza
+    ultimo_precio/porcentaje si ya existía)."""
     if not items:
         return
 
     hoy = datetime.now(ZONA_HORARIA_ARGENTINA).date()
-    filas = [(item["codigo"], item["descripcion"], item["ultimo_precio"], hoy) for item in items]
+    filas = [
+        (item["codigo"], item["descripcion"], item["ultimo_precio"], item.get("porcentaje"), hoy)
+        for item in items
+    ]
 
     conn = None
     try:

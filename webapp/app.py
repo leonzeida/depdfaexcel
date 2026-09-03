@@ -120,6 +120,7 @@ def items_para_comparar():
                 "descripcion": item["descripcion"],
                 "cantidad": item["cantidad"],
                 "ultimo_precio": datos.get("ultimo_precio"),
+                "porcentaje": datos.get("porcentaje"),
             }
         )
 
@@ -143,11 +144,19 @@ def guardar_referencia():
         except (TypeError, ValueError):
             continue
 
+        porcentaje = item.get("porcentaje")
+        if porcentaje is not None:
+            try:
+                porcentaje = float(porcentaje)
+            except (TypeError, ValueError):
+                porcentaje = None
+
         items_validos.append(
             {
                 "codigo": codigo,
                 "descripcion": descripcion,
                 "ultimo_precio": ultimo_precio,
+                "porcentaje": porcentaje,
             }
         )
 

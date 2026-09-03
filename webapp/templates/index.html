@@ -26,7 +26,7 @@
     flex-direction: column;
     gap: 24px;
     width: 100%;
-    max-width: 1750px;
+    max-width: 1820px;
   }
   .tarjeta {
     background: #ffffff;
@@ -456,6 +456,7 @@
     const datos = items.map((item, indice) => {
       const fila = indice + 1;
       const ultimo = item.ultimo_precio === null || item.ultimo_precio === undefined ? '' : item.ultimo_precio;
+      const porcentaje = item.porcentaje === null || item.porcentaje === undefined ? 0 : item.porcentaje;
       return [
         item.rg,
         item.codigo,
@@ -465,7 +466,7 @@
         ultimo, // Precio de referencia (editable, arranca igual al último precio, no se guarda)
         '', '', '', '',
         '=MIN(G' + fila + ':J' + fila + ')',
-        0,
+        porcentaje,
         '=K' + fila + '*((L' + fila + '+100)/100)',
       ];
     });
@@ -475,10 +476,11 @@
         {
           data: datos,
           columnSorting: false,
+          onchange: (instancia, celda, x, y) => actualizarColorPrecioFinal(instancia, parseInt(y, 10) + 1),
           columns: [
             { type: 'numeric', title: 'Renglón', width: 70, readOnly: true },
             { type: 'text', title: 'Código', width: 100, readOnly: true },
-            { type: 'text', title: 'Descripción', width: 260, readOnly: true },
+            { type: 'text', title: 'Descripción', width: 320, readOnly: true, align: 'left', wordWrap: true },
             { type: 'numeric', title: 'Cantidad', width: 80, readOnly: true },
             Object.assign({ type: 'text', title: 'Último precio', width: 120, readOnly: true }, MASCARA_PESOS),
             Object.assign({ type: 'text', title: 'Precio de referencia', width: 140 }, MASCARA_PESOS),
@@ -495,34 +497,55 @@
     });
     worksheetActual = instancias[0];
 
+    for (let indice = 0; indice < items.length; indice++) {
+      actualizarColorPrecioFinal(worksheetActual, indice + 1);
+    }
+
     const ayuda = document.createElement('p');
     ayuda.className = 'ayuda-formulas';
-    ayuda.textContent = 'Es una grilla como Excel: podés escribir fórmulas en cualquier celda. Precio final = Mejor precio nuevo + ese % de aumento. Ej.: dejá 0 para el mismo precio, poné 20 para sumarle un 20%.';
+    ayuda.textContent = 'Es una grilla como Excel: podés escribir fórmulas en cualquier celda. Precio final = Mejor precio nuevo + ese % de aumento. Ej.: dejá 0 para el mismo precio, poné 20 para sumarle un 20%. El Precio final aparece en verde si queda por debajo del Precio de referencia, y en rojo si queda igual o por arriba.';
     zonaTablaComparar.appendChild(ayuda);
 
     botonGuardarReferencia.disabled = false;
   }
 
+  function algunProveedorCargado(ws, fila) {
+    return ['G', 'H', 'I', 'J'].some(col => (ws.getValue(col + fila) || '').toString().trim() !== '');
+  }
+
+  function actualizarColorPrecioFinal(ws, fila) {
+    if (!algunProveedorCargado(ws, fila)) {
+      ws.setStyle('M' + fila, 'color', '');
+      return;
+    }
+    const referencia = parsePesos(ws.getValue('F' + fila, true));
+    const final = parsePesos(ws.getValue('M' + fila, true));
+    if (referencia === null || final === null) {
+      ws.setStyle('M' + fila, 'color', '');
+      return;
+    }
+    ws.setStyle('M' + fila, 'color', final < referencia ? '#1e7a46' : '#b3261e');
+  }
+
   function leerFilaParaGuardar(item, indice) {
     const fila = indice + 1;
-    const columnasProveedor = ['G', 'H', 'I', 'J'];
-    const algunProveedorCargado = columnasProveedor.some(
-      col => (worksheetActual.getValue(col + fila) || '').toString().trim() !== ''
-    );
     const rawFinal = (worksheetActual.getValue('M' + fila) || '').toString().trim();
     const esValorPorDefecto = rawFinal === ('=K' + fila + '*((L' + fila + '+100)/100)');
 
-    if (!algunProveedorCargado && esValorPorDefecto) {
+    if (!algunProveedorCargado(worksheetActual, fila) && esValorPorDefecto) {
       return null; // fila sin cotizar todavía, no se guarda (evita guardar un precio fantasma)
     }
 
     const precioFinal = parsePesos(worksheetActual.getValue('M' + fila, true));
     if (precioFinal === null) return null;
 
+    const porcentaje = parsePesos(worksheetActual.getValue('L' + fila, true));
+
     return {
       codigo: item.codigo,
       descripcion: item.descripcion,
       ultimo_precio: precioFinal,
+      porcentaje: porcentaje,
     };
   }
 
