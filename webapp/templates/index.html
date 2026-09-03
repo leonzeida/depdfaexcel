@@ -471,16 +471,21 @@
       ];
     });
 
-    const instancias = jspreadsheet(envoltorio, {
-      onevent: (nombreEvento, instancia, celda, x, y) => {
-        if (nombreEvento === 'onchange') {
-          actualizarColorPrecioFinal(instancia, parseInt(y, 10) + 1);
+    const manejarEventoGrilla = (nombreEvento, instancia) => {
+      if (nombreEvento === 'onafterchanges' || nombreEvento === 'onchange') {
+        for (let i = 0; i < itemsActuales.length; i++) {
+          actualizarColorPrecioFinal(instancia, i + 1);
         }
-      },
+      }
+    };
+
+    const instancias = jspreadsheet(envoltorio, {
+      onevent: manejarEventoGrilla,
       worksheets: [
         {
           data: datos,
           columnSorting: false,
+          onevent: manejarEventoGrilla,
           columns: [
             { type: 'numeric', title: 'Renglón', width: 70, readOnly: true },
             { type: 'text', title: 'Código', width: 100, readOnly: true },
@@ -501,9 +506,19 @@
     });
     worksheetActual = instancias[0];
 
-    for (let indice = 0; indice < items.length; indice++) {
-      actualizarColorPrecioFinal(worksheetActual, indice + 1);
-    }
+    const recalcularTodosLosColores = () => {
+      for (let indice = 0; indice < itemsActuales.length; indice++) {
+        actualizarColorPrecioFinal(worksheetActual, indice + 1);
+      }
+    };
+    recalcularTodosLosColores();
+    // Además de onevent/onchange de jspreadsheet, escuchamos directo los
+    // eventos del DOM dentro de la grilla (por si el evento propio de la
+    // librería no llega a dispararse en esta versión) para que el color
+    // se recalcule sí o sí apenas se tipea o se sale de una celda.
+    envoltorio.addEventListener('keyup', recalcularTodosLosColores);
+    envoltorio.addEventListener('blur', recalcularTodosLosColores, true);
+    envoltorio.addEventListener('click', recalcularTodosLosColores);
 
     const ayuda = document.createElement('p');
     ayuda.className = 'ayuda-formulas';
@@ -517,18 +532,28 @@
     return ['G', 'H', 'I', 'J'].some(col => (ws.getValue(col + fila) || '').toString().trim() !== '');
   }
 
+  function pintarCelda(ws, cel, fondo, letra) {
+    ws.setStyle(cel, 'background-color', fondo);
+    ws.setStyle(cel, 'color', letra);
+  }
+
   function actualizarColorPrecioFinal(ws, fila) {
+    const cel = 'M' + fila;
     if (!algunProveedorCargado(ws, fila)) {
-      ws.setStyle('M' + fila, 'color', '');
+      pintarCelda(ws, cel, '', '');
       return;
     }
     const referencia = parsePesos(ws.getValue('F' + fila, true));
-    const final = parsePesos(ws.getValue('M' + fila, true));
+    const final = parsePesos(ws.getValue(cel, true));
     if (referencia === null || final === null) {
-      ws.setStyle('M' + fila, 'color', '');
+      pintarCelda(ws, cel, '', '');
       return;
     }
-    ws.setStyle('M' + fila, 'color', final < referencia ? '#1e7a46' : '#b3261e');
+    if (final < referencia) {
+      pintarCelda(ws, cel, '#d4f4dd', '#1e7a46');
+    } else {
+      pintarCelda(ws, cel, '#fbdcda', '#a3231c');
+    }
   }
 
   function leerFilaParaGuardar(item, indice) {
