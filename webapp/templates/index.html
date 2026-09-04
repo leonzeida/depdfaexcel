@@ -216,7 +216,14 @@
   .fila-botones-comparar {
     display: flex;
     gap: 12px;
-    margin-top: 24px;
+    max-width: 520px;
+    margin: 24px auto 0;
+    padding: 10px 0;
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: #ffffff;
+    border-bottom: 1px solid #eef2f7;
   }
   .fila-botones-comparar button {
     width: auto;
@@ -258,6 +265,7 @@
     .campo-archivo label.etiqueta-campo { color: #eef2f7; }
     .campo-archivo .selector { border-color: #333d55; }
     .campo-archivo .selector:hover { background: #232a3d; border-color: #4f7cff; }
+    .fila-botones-comparar { background: #1b2030; border-bottom-color: #262c3d; }
     .grilla-comparacion-wrap { border-color: #333d55; }
     .titulo-comparacion { background: #3a4522; color: #d4ea6b; }
     .ayuda-formulas { color: #6b7793; }
@@ -312,11 +320,16 @@
           <input type="file" id="pdf-comparar" name="pdf" accept="application/pdf,.pdf" required>
         </div>
       </form>
-      <div class="fila-botones-comparar">
-        <button type="submit" form="formulario-comparar" id="boton-comparar">Cargar ítems</button>
-        <button type="button" id="boton-guardar-referencia" disabled>Guardar precios de referencia</button>
-      </div>
       <div class="cargando" id="cargando-comparar">Cargando los ítems, un momento…</div>
+    </div>
+
+    <!-- Fuera de .ancho-angosto a propósito: para que el "sticky" quede
+         pegado mientras se scrollea toda la tarjeta (incluida la grilla de
+         abajo), su contenedor de referencia tiene que ser la tarjeta
+         entera, no el div corto del formulario. -->
+    <div class="fila-botones-comparar">
+      <button type="submit" form="formulario-comparar" id="boton-comparar">Cargar ítems</button>
+      <button type="button" id="boton-guardar-referencia" disabled>Guardar precios de referencia</button>
     </div>
 
     <div id="zona-tabla-comparar"></div>
@@ -443,6 +456,14 @@
     return isNaN(valor) ? null : valor;
   }
 
+  function formatearFecha(iso) {
+    if (!iso) return '';
+    const partes = String(iso).split('-');
+    if (partes.length !== 3) return iso;
+    const [anio, mes, dia] = partes;
+    return dia + '/' + mes + '/' + anio;
+  }
+
   const formularioComparar = document.getElementById('formulario-comparar');
   const botonComparar = document.getElementById('boton-comparar');
   const botonGuardarReferencia = document.getElementById('boton-guardar-referencia');
@@ -484,19 +505,20 @@
         item.descripcion,
         item.cantidad,
         ultimo, // Último precio (de solo lectura, historial)
+        formatearFecha(item.actualizado), // Fecha del último guardado (de solo lectura)
+        item.mejor_proveedor || '', // Proveedor ganador la última vez que se guardó (de solo lectura)
         ultimo, // Precio de referencia (editable, arranca igual al último precio, no se guarda)
         '', '', '', '',
-        '=MIN(G' + fila + ':J' + fila + ')',
+        '=MIN(I' + fila + ':L' + fila + ')',
+        '', // Proveedor ganador en vivo (lo calcula el JS, no es una fórmula de celda)
         porcentaje,
-        '=K' + fila + '*((L' + fila + '+100)/100)',
+        '=M' + fila + '*((O' + fila + '+100)/100)',
       ];
     });
 
     const manejarEventoGrilla = (nombreEvento, instancia) => {
-      if (nombreEvento === 'onafterchanges' || nombreEvento === 'onchange') {
-        for (let i = 0; i < itemsActuales.length; i++) {
-          actualizarColorPrecioFinal(instancia, i + 1);
-        }
+      if (nombreEvento === 'onafterchanges' || nombreEvento === 'onchange' || nombreEvento === 'onchangeheader') {
+        recalcularTodo(instancia);
       }
     };
 
@@ -513,12 +535,15 @@
             { type: 'text', title: 'Descripción', width: 320, readOnly: true, align: 'left', wordWrap: true },
             { type: 'numeric', title: 'Cantidad', width: 80, readOnly: true },
             Object.assign({ type: 'text', title: 'Último precio', width: 120, readOnly: true }, MASCARA_PESOS),
+            { type: 'text', title: 'Actualizado', width: 100, readOnly: true },
+            { type: 'text', title: 'Mejor proveedor', width: 150, readOnly: true },
             Object.assign({ type: 'text', title: 'Precio de referencia', width: 140 }, MASCARA_PESOS),
             Object.assign({ type: 'text', title: 'Proveedor 1', width: 120 }, MASCARA_PESOS),
             Object.assign({ type: 'text', title: 'Proveedor 2', width: 120 }, MASCARA_PESOS),
             Object.assign({ type: 'text', title: 'Proveedor 3', width: 120 }, MASCARA_PESOS),
             Object.assign({ type: 'text', title: 'Proveedor 4', width: 120 }, MASCARA_PESOS),
             Object.assign({ type: 'text', title: 'Mejor precio nuevo', width: 140 }, MASCARA_PESOS),
+            { type: 'text', title: 'Proveedor ganador', width: 150, readOnly: true },
             { type: 'text', title: '%', width: 70 },
             Object.assign({ type: 'text', title: 'Precio final', width: 130 }, MASCARA_PESOS),
           ],
@@ -527,16 +552,19 @@
     });
     worksheetActual = instancias[0];
 
-    const recalcularTodosLosColores = () => {
+    const recalcularTodo = (ws) => {
       for (let indice = 0; indice < itemsActuales.length; indice++) {
-        actualizarColorPrecioFinal(worksheetActual, indice + 1);
+        actualizarProveedorGanador(ws, indice + 1);
+        actualizarColorPrecioFinal(ws, indice + 1);
       }
     };
+    const recalcularTodosLosColores = () => recalcularTodo(worksheetActual);
     recalcularTodosLosColores();
-    // Además de onevent/onchange de jspreadsheet, escuchamos directo los
-    // eventos del DOM dentro de la grilla (por si el evento propio de la
-    // librería no llega a dispararse en esta versión) para que el color
-    // se recalcule sí o sí apenas se tipea o se sale de una celda.
+    // Además de onevent/onchange/onchangeheader de jspreadsheet, escuchamos
+    // directo los eventos del DOM dentro de la grilla (por si el evento
+    // propio de la librería no llega a dispararse en esta versión) para
+    // que todo se recalcule sí o sí apenas se tipea, se sale de una celda
+    // o se renombra un proveedor.
     envoltorio.addEventListener('keyup', recalcularTodosLosColores);
     envoltorio.addEventListener('blur', recalcularTodosLosColores, true);
     envoltorio.addEventListener('click', recalcularTodosLosColores);
@@ -594,8 +622,16 @@
     boton.textContent = 'Descargar esta comparación como Excel';
   }
 
+  // Columnas Proveedor 1-4 (letra de la grilla -> índice 0-based de jspreadsheet).
+  const COLUMNAS_PROVEEDORES = [
+    { letra: 'I', indice: 8 },
+    { letra: 'J', indice: 9 },
+    { letra: 'K', indice: 10 },
+    { letra: 'L', indice: 11 },
+  ];
+
   function algunProveedorCargado(ws, fila) {
-    return ['G', 'H', 'I', 'J'].some(col => (ws.getValue(col + fila) || '').toString().trim() !== '');
+    return COLUMNAS_PROVEEDORES.some(p => (ws.getValue(p.letra + fila) || '').toString().trim() !== '');
   }
 
   function pintarCelda(ws, cel, fondo, letra) {
@@ -603,13 +639,27 @@
     ws.setStyle(cel, 'color', letra);
   }
 
+  function actualizarProveedorGanador(ws, fila) {
+    let ganador = null;
+    let menorPrecio = null;
+    for (const p of COLUMNAS_PROVEEDORES) {
+      const valor = parsePesos(ws.getValue(p.letra + fila, true));
+      if (valor === null) continue;
+      if (menorPrecio === null || valor < menorPrecio) {
+        menorPrecio = valor;
+        ganador = p;
+      }
+    }
+    ws.setValue('N' + fila, ganador ? ws.getHeader(ganador.indice) : '');
+  }
+
   function actualizarColorPrecioFinal(ws, fila) {
-    const cel = 'M' + fila;
+    const cel = 'P' + fila;
     if (!algunProveedorCargado(ws, fila)) {
       pintarCelda(ws, cel, '', '');
       return;
     }
-    const referencia = parsePesos(ws.getValue('F' + fila, true));
+    const referencia = parsePesos(ws.getValue('H' + fila, true));
     const final = parsePesos(ws.getValue(cel, true));
     if (referencia === null || final === null) {
       pintarCelda(ws, cel, '', '');
@@ -624,23 +674,25 @@
 
   function leerFilaParaGuardar(item, indice) {
     const fila = indice + 1;
-    const rawFinal = (worksheetActual.getValue('M' + fila) || '').toString().trim();
-    const esValorPorDefecto = rawFinal === ('=K' + fila + '*((L' + fila + '+100)/100)');
+    const rawFinal = (worksheetActual.getValue('P' + fila) || '').toString().trim();
+    const esValorPorDefecto = rawFinal === ('=M' + fila + '*((O' + fila + '+100)/100)');
 
     if (!algunProveedorCargado(worksheetActual, fila) && esValorPorDefecto) {
       return null; // fila sin cotizar todavía, no se guarda (evita guardar un precio fantasma)
     }
 
-    const precioFinal = parsePesos(worksheetActual.getValue('M' + fila, true));
+    const precioFinal = parsePesos(worksheetActual.getValue('P' + fila, true));
     if (precioFinal === null) return null;
 
-    const porcentaje = parsePesos(worksheetActual.getValue('L' + fila, true));
+    const porcentaje = parsePesos(worksheetActual.getValue('O' + fila, true));
+    const mejorProveedor = (worksheetActual.getValue('N' + fila) || '').toString().trim() || null;
 
     return {
       codigo: item.codigo,
       descripcion: item.descripcion,
       ultimo_precio: precioFinal,
       porcentaje: porcentaje,
+      mejor_proveedor: mejorProveedor,
     };
   }
 

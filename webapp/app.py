@@ -122,6 +122,8 @@ def items_para_comparar():
                 "cantidad": item["cantidad"],
                 "ultimo_precio": datos.get("ultimo_precio"),
                 "porcentaje": datos.get("porcentaje"),
+                "actualizado": datos.get("actualizado"),
+                "mejor_proveedor": datos.get("mejor_proveedor"),
             }
         )
 
@@ -152,12 +154,15 @@ def guardar_referencia():
             except (TypeError, ValueError):
                 porcentaje = None
 
+        mejor_proveedor = (item.get("mejor_proveedor") or "").strip() or None
+
         items_validos.append(
             {
                 "codigo": codigo,
                 "descripcion": descripcion,
                 "ultimo_precio": ultimo_precio,
                 "porcentaje": porcentaje,
+                "mejor_proveedor": mejor_proveedor,
             }
         )
 

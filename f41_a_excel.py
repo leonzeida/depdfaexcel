@@ -434,17 +434,18 @@ def escribir_planilla_trabajo(filas: list, encabezado: dict, salida: Path):
 
 ENCABEZADOS_COMPARACION = [
     "Renglon", "Codigo", "Descripcion", "Cantidad", "Ultimo precio",
-    "Precio de referencia", "Proveedor 1", "Proveedor 2", "Proveedor 3",
-    "Proveedor 4", "Mejor precio nuevo", "%", "Precio final",
+    "Actualizado", "Mejor proveedor", "Precio de referencia",
+    "Proveedor 1", "Proveedor 2", "Proveedor 3", "Proveedor 4",
+    "Mejor precio nuevo", "Proveedor ganador", "%", "Precio final",
 ]
 
 
 def escribir_comparacion_precios_excel(titulo: str, filas: list, salida: Path):
     """Vuelca a un .xlsx la grilla del comparador de precios de la web tal
-    cual la ve el usuario (mismas 13 columnas). `filas` es una lista de
-    listas de 13 valores en el mismo orden que ENCABEZADOS_COMPARACION.
+    cual la ve el usuario (mismas 16 columnas). `filas` es una lista de
+    listas de 16 valores en el mismo orden que ENCABEZADOS_COMPARACION.
 
-    Las columnas "Mejor precio nuevo" (K) y "Precio final" (M) se vuelven
+    Las columnas "Mejor precio nuevo" (M) y "Precio final" (P) se vuelven
     a generar acá con el número de fila real del Excel (los datos arrancan
     en la fila 3 por el título y el encabezado), en vez de reusar el texto
     de fórmula que manda la grilla (que numera sus filas desde 1) — si no,
@@ -455,7 +456,7 @@ def escribir_comparacion_precios_excel(titulo: str, filas: list, salida: Path):
     ws = wb.active
     ws.title = "Comparacion"
 
-    ws.merge_cells("A1:M1")
+    ws.merge_cells("A1:P1")
     ws["A1"] = titulo
     ws["A1"].font = Font(bold=True, size=13, color="000000")
     ws["A1"].alignment = Alignment(horizontal="center")
@@ -471,12 +472,13 @@ def escribir_comparacion_precios_excel(titulo: str, filas: list, salida: Path):
         c.fill = relleno_encabezado
         c.alignment = centrado
 
-    columnas_moneda = (5, 6, 7, 8, 9, 10, 11, 13)  # Ultimo precio .. Mejor precio nuevo, Precio final
+    # Ultimo precio, Precio de referencia, Proveedor 1-4, Mejor precio nuevo, Precio final
+    columnas_moneda = (5, 8, 9, 10, 11, 12, 13, 16)
     fila_excel = 3
     for fila in filas:
-        fila = (list(fila) + [None] * 13)[:13]
-        fila[10] = f"=MIN(G{fila_excel}:J{fila_excel})"
-        fila[12] = f"=K{fila_excel}*((L{fila_excel}+100)/100)"
+        fila = (list(fila) + [None] * 16)[:16]
+        fila[12] = f"=MIN(I{fila_excel}:L{fila_excel})"
+        fila[15] = f"=M{fila_excel}*((O{fila_excel}+100)/100)"
         for col, valor in enumerate(fila, start=1):
             c = ws.cell(row=fila_excel, column=col, value=valor if valor != "" else None)
             c.alignment = Alignment(horizontal="left", wrap_text=True) if col == 3 else centrado
@@ -488,17 +490,18 @@ def escribir_comparacion_precios_excel(titulo: str, filas: list, salida: Path):
     if ultima_fila >= 3:
         verde = PatternFill(start_color="D4F4DD", end_color="D4F4DD", fill_type="solid")
         rojo = PatternFill(start_color="FBDCDA", end_color="FBDCDA", fill_type="solid")
-        rango = f"M3:M{ultima_fila}"
+        rango = f"P3:P{ultima_fila}"
         ws.conditional_formatting.add(
-            rango, FormulaRule(formula=["M3<F3"], fill=verde, font=Font(color="1E7A46"))
+            rango, FormulaRule(formula=["P3<H3"], fill=verde, font=Font(color="1E7A46"))
         )
         ws.conditional_formatting.add(
-            rango, FormulaRule(formula=["M3>=F3"], fill=rojo, font=Font(color="A3231C"))
+            rango, FormulaRule(formula=["P3>=H3"], fill=rojo, font=Font(color="A3231C"))
         )
 
     anchos = {
-        "A": 10, "B": 14, "C": 45, "D": 10, "E": 13, "F": 15,
-        "G": 12, "H": 12, "I": 12, "J": 12, "K": 15, "L": 8, "M": 13,
+        "A": 10, "B": 14, "C": 45, "D": 10, "E": 13, "F": 13, "G": 16,
+        "H": 15, "I": 12, "J": 12, "K": 12, "L": 12, "M": 15, "N": 16,
+        "O": 8, "P": 13,
     }
     for letra, ancho in anchos.items():
         ws.column_dimensions[letra].width = ancho
