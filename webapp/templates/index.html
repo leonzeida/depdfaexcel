@@ -670,7 +670,11 @@
     // deshacer, así que escribir sin necesidad en cada recálculo ensucia
     // el Ctrl+Z además de disparar recálculos de más.
     if ((ws.getValue('N' + fila) || '') !== nuevoValor) {
-      ws.setValue('N' + fila, nuevoValor);
+      // El 3er parámetro (force=true) es necesario: "Proveedor ganador" es
+      // de solo lectura (readOnly), y sin este flag jspreadsheet ignora en
+      // silencio cualquier setValue sobre una celda readonly (confirmado
+      // leyendo updateCell() en el bundle fuente).
+      ws.setValue('N' + fila, nuevoValor, true);
     }
   }
 
