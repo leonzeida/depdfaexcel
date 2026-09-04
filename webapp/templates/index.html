@@ -552,10 +552,24 @@
     });
     worksheetActual = instancias[0];
 
+    // ws.setValue(...) dispara el mismo evento "onafterchanges" que un
+    // cambio hecho por el usuario (confirmado leyendo el código fuente de
+    // jspreadsheet: setValue termina llamando a dispatch("onafterchanges")
+    // igual que una edición manual). Como actualizarProveedorGanador usa
+    // setValue para escribir la columna N, sin esta traba cada recálculo
+    // volvía a disparar el evento que lo llama de nuevo -> bucle infinito
+    // que congelaba la grilla apenas se cargaba un precio de proveedor.
+    let recalculando = false;
     const recalcularTodo = (ws) => {
-      for (let indice = 0; indice < itemsActuales.length; indice++) {
-        actualizarProveedorGanador(ws, indice + 1);
-        actualizarColorPrecioFinal(ws, indice + 1);
+      if (recalculando) return;
+      recalculando = true;
+      try {
+        for (let indice = 0; indice < itemsActuales.length; indice++) {
+          actualizarProveedorGanador(ws, indice + 1);
+          actualizarColorPrecioFinal(ws, indice + 1);
+        }
+      } finally {
+        recalculando = false;
       }
     };
     const recalcularTodosLosColores = () => recalcularTodo(worksheetActual);
@@ -650,7 +664,14 @@
         ganador = p;
       }
     }
-    ws.setValue('N' + fila, ganador ? ws.getHeader(ganador.indice) : '');
+    const nuevoValor = ganador ? ws.getHeader(ganador.indice) : '';
+    // Solo escribir si cambió: setValue dispara "onafterchanges" (mismo
+    // evento que un cambio manual) y suma una entrada al historial de
+    // deshacer, así que escribir sin necesidad en cada recálculo ensucia
+    // el Ctrl+Z además de disparar recálculos de más.
+    if ((ws.getValue('N' + fila) || '') !== nuevoValor) {
+      ws.setValue('N' + fila, nuevoValor);
+    }
   }
 
   function actualizarColorPrecioFinal(ws, fila) {
