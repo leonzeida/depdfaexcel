@@ -198,7 +198,6 @@
     margin: 0 0 14px;
   }
   .grilla-comparacion-wrap {
-    overflow-x: auto;
     border: 1px solid #dbe1e8;
     border-radius: 10px;
   }
@@ -211,19 +210,6 @@
   .grilla-comparacion-wrap td,
   .grilla-comparacion-wrap th {
     color: #1a2b4c;
-  }
-  /* Selector más específico que el de jspreadsheet.css a propósito: la
-     librería ya trae ".jss_worksheet > thead > tr > td { position:
-     sticky; top:0; z-index:2 }" (pensado para cuando la grilla tiene su
-     propio scroll interno), y esa regla le gana a una menos específica
-     como ".grilla-comparacion-wrap thead td" aunque la nuestra esté
-     declarada después. Sin este ajuste, el encabezado quedaba "sticky"
-     pero pegado al top:0 de la página, tapado detrás de la barra de
-     botones (que tiene z-index más alto). */
-  .grilla-comparacion-wrap .jss_worksheet > thead > tr > td {
-    position: sticky;
-    top: var(--altura-barra-comparar, 0px);
-    z-index: 4;
   }
   .fila-botones-comparar {
     display: flex;
@@ -506,21 +492,6 @@
   let itemsActuales = [];
   let tituloActual = '';
 
-  // Los encabezados de columna de la grilla quedan "sticky" justo debajo de
-  // la barra de botones (que también es sticky). Como esa barra puede
-  // cambiar de altura (por ejemplo por el checkbox de modo manual, o por
-  // el tamaño de letra del navegador), se mide con ResizeObserver en vez
-  // de usar un número fijo a mano.
-  const barraBotonesComparar = document.querySelector('.fila-botones-comparar');
-  const fijarAlturaBarraComparar = () => {
-    document.documentElement.style.setProperty(
-      '--altura-barra-comparar',
-      barraBotonesComparar.getBoundingClientRect().height + 'px'
-    );
-  };
-  fijarAlturaBarraComparar();
-  new ResizeObserver(fijarAlturaBarraComparar).observe(barraBotonesComparar);
-
   // Columnas que normalmente son de solo lectura (coincide exactamente con
   // los "readOnly: true" de la config de columnas de crearGrillaComparacion).
   const COLUMNAS_SOLO_LECTURA = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'N'];
@@ -594,6 +565,17 @@
           data: datos,
           columnSorting: false,
           onevent: manejarEventoGrilla,
+          // La grilla pasa a tener su propio scroll interno (como un
+          // Excel real), en vez de que se scrollee toda la página: así
+          // el encabezado de columnas queda fijo usando el sticky que
+          // jspreadsheet ya trae de fábrica para este caso (confirmado
+          // leyendo jspreadsheet.css: ".jss_worksheet > thead > tr > td"
+          // ya es "position: sticky; top: 0" ahí adentro), y de paso el
+          // scroll horizontal para ver las columnas de la derecha queda
+          // contenido en la grilla en vez de mover toda la página.
+          tableOverflow: true,
+          tableWidth: '100%',
+          tableHeight: '65vh',
           columns: [
             { type: 'numeric', title: 'Renglón', width: 70, readOnly: true },
             { type: 'text', title: 'Código', width: 100, readOnly: true },
