@@ -212,7 +212,15 @@
   .grilla-comparacion-wrap th {
     color: #1a2b4c;
   }
-  .grilla-comparacion-wrap thead td {
+  /* Selector más específico que el de jspreadsheet.css a propósito: la
+     librería ya trae ".jss_worksheet > thead > tr > td { position:
+     sticky; top:0; z-index:2 }" (pensado para cuando la grilla tiene su
+     propio scroll interno), y esa regla le gana a una menos específica
+     como ".grilla-comparacion-wrap thead td" aunque la nuestra esté
+     declarada después. Sin este ajuste, el encabezado quedaba "sticky"
+     pero pegado al top:0 de la página, tapado detrás de la barra de
+     botones (que tiene z-index más alto). */
+  .grilla-comparacion-wrap .jss_worksheet > thead > tr > td {
     position: sticky;
     top: var(--altura-barra-comparar, 0px);
     z-index: 4;
