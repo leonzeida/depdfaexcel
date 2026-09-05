@@ -213,8 +213,14 @@
   .grilla-comparacion-wrap th {
     color: #1a2b4c;
   }
+  .grilla-comparacion-wrap thead td {
+    position: sticky;
+    top: var(--altura-barra-comparar, 0px);
+    z-index: 4;
+  }
   .fila-botones-comparar {
     display: flex;
+    flex-wrap: wrap;
     gap: 12px;
     max-width: 520px;
     margin: 24px auto 0;
@@ -230,6 +236,16 @@
     flex: 1;
     margin-top: 0;
   }
+  .opcion-modo-manual {
+    flex-basis: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #5a6b8c;
+    cursor: pointer;
+  }
+  .opcion-modo-manual input { margin: 0; cursor: pointer; }
   .ayuda-formulas {
     text-align: center;
     color: #8291ab;
@@ -266,6 +282,7 @@
     .campo-archivo .selector { border-color: #333d55; }
     .campo-archivo .selector:hover { background: #232a3d; border-color: #4f7cff; }
     .fila-botones-comparar { background: #1b2030; border-bottom-color: #262c3d; }
+    .opcion-modo-manual { color: #9aa8c7; }
     .grilla-comparacion-wrap { border-color: #333d55; }
     .titulo-comparacion { background: #3a4522; color: #d4ea6b; }
     .ayuda-formulas { color: #6b7793; }
@@ -330,6 +347,10 @@
     <div class="fila-botones-comparar">
       <button type="submit" form="formulario-comparar" id="boton-comparar">Cargar ítems</button>
       <button type="button" id="boton-guardar-referencia" disabled>Guardar precios de referencia</button>
+      <label class="opcion-modo-manual">
+        <input type="checkbox" id="checkbox-modo-manual">
+        Modo manual (editar todo, incluidas las celdas protegidas)
+      </label>
     </div>
 
     <div id="zona-tabla-comparar"></div>
@@ -472,10 +493,44 @@
   const zonaTablaComparar = document.getElementById('zona-tabla-comparar');
   const pdfComparar = document.getElementById('pdf-comparar');
   const nombrePdfComparar = document.getElementById('nombre-pdf-comparar');
+  const checkboxModoManual = document.getElementById('checkbox-modo-manual');
 
   let worksheetActual = null;
   let itemsActuales = [];
   let tituloActual = '';
+
+  // Los encabezados de columna de la grilla quedan "sticky" justo debajo de
+  // la barra de botones (que también es sticky). Como esa barra puede
+  // cambiar de altura (por ejemplo por el checkbox de modo manual, o por
+  // el tamaño de letra del navegador), se mide con ResizeObserver en vez
+  // de usar un número fijo a mano.
+  const barraBotonesComparar = document.querySelector('.fila-botones-comparar');
+  const fijarAlturaBarraComparar = () => {
+    document.documentElement.style.setProperty(
+      '--altura-barra-comparar',
+      barraBotonesComparar.getBoundingClientRect().height + 'px'
+    );
+  };
+  fijarAlturaBarraComparar();
+  new ResizeObserver(fijarAlturaBarraComparar).observe(barraBotonesComparar);
+
+  // Columnas que normalmente son de solo lectura (coincide exactamente con
+  // los "readOnly: true" de la config de columnas de crearGrillaComparacion).
+  const COLUMNAS_SOLO_LECTURA = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'N'];
+
+  function fijarSoloLecturaColumnas(ws, cantidadFilas, modoManualActivo) {
+    for (let fila = 1; fila <= cantidadFilas; fila++) {
+      for (const letra of COLUMNAS_SOLO_LECTURA) {
+        ws.setReadOnly(letra + fila, !modoManualActivo);
+      }
+    }
+  }
+
+  checkboxModoManual.addEventListener('change', () => {
+    if (worksheetActual) {
+      fijarSoloLecturaColumnas(worksheetActual, itemsActuales.length, checkboxModoManual.checked);
+    }
+  });
 
   pdfComparar.addEventListener('change', () => {
     nombrePdfComparar.textContent = pdfComparar.files[0] ? pdfComparar.files[0].name : 'Ningún archivo elegido';
@@ -485,6 +540,9 @@
     zonaTablaComparar.innerHTML = '';
     itemsActuales = items;
     tituloActual = titulo;
+    // Cada PDF cargado arranca protegido: el modo manual no se arrastra
+    // de una carga a la siguiente.
+    checkboxModoManual.checked = false;
 
     const tituloEl = document.createElement('p');
     tituloEl.className = 'titulo-comparacion';
@@ -654,6 +712,11 @@
   }
 
   function actualizarProveedorGanador(ws, fila) {
+    // En modo manual, "Proveedor ganador" pasa a ser editable a mano; si
+    // siguiéramos recalculándola acá, el próximo recálculo (disparado por
+    // cualquier tecleo en cualquier celda) pisaría lo que el usuario
+    // acaba de escribir.
+    if (checkboxModoManual.checked) return;
     let ganador = null;
     let menorPrecio = null;
     for (const p of COLUMNAS_PROVEEDORES) {
