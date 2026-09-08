@@ -437,26 +437,28 @@ ENCABEZADOS_COMPARACION = [
     "Actualizado", "Mejor proveedor", "Precio de referencia",
     "Proveedor 1", "Proveedor 2", "Proveedor 3", "Proveedor 4",
     "Mejor precio nuevo", "Proveedor ganador", "%", "Precio final",
+    "Total de venta", "Total de costos",
 ]
 
 
 def escribir_comparacion_precios_excel(titulo: str, filas: list, salida: Path):
     """Vuelca a un .xlsx la grilla del comparador de precios de la web tal
-    cual la ve el usuario (mismas 16 columnas). `filas` es una lista de
-    listas de 16 valores en el mismo orden que ENCABEZADOS_COMPARACION.
+    cual la ve el usuario (mismas 18 columnas). `filas` es una lista de
+    listas de 18 valores en el mismo orden que ENCABEZADOS_COMPARACION.
 
-    Las columnas "Mejor precio nuevo" (M) y "Precio final" (P) se vuelven
-    a generar acá con el número de fila real del Excel (los datos arrancan
-    en la fila 3 por el título y el encabezado), en vez de reusar el texto
-    de fórmula que manda la grilla (que numera sus filas desde 1) — si no,
-    las fórmulas quedarían apuntando a filas equivocadas al desplazarse.
-    El resto de las columnas se copian tal cual.
+    Las columnas "Mejor precio nuevo" (M), "Precio final" (P), "Total de
+    venta" (Q) y "Total de costos" (R) se vuelven a generar acá con el
+    número de fila real del Excel (los datos arrancan en la fila 3 por el
+    título y el encabezado), en vez de reusar el texto de fórmula que
+    manda la grilla (que numera sus filas desde 1) — si no, las fórmulas
+    quedarían apuntando a filas equivocadas al desplazarse. El resto de
+    las columnas se copian tal cual.
     """
     wb = Workbook()
     ws = wb.active
     ws.title = "Comparacion"
 
-    ws.merge_cells("A1:P1")
+    ws.merge_cells("A1:R1")
     ws["A1"] = titulo
     ws["A1"].font = Font(bold=True, size=13, color="000000")
     ws["A1"].alignment = Alignment(horizontal="center")
@@ -472,13 +474,16 @@ def escribir_comparacion_precios_excel(titulo: str, filas: list, salida: Path):
         c.fill = relleno_encabezado
         c.alignment = centrado
 
-    # Ultimo precio, Precio de referencia, Proveedor 1-4, Mejor precio nuevo, Precio final
-    columnas_moneda = (5, 8, 9, 10, 11, 12, 13, 16)
+    # Ultimo precio, Precio de referencia, Proveedor 1-4, Mejor precio nuevo,
+    # Precio final, Total de venta, Total de costos
+    columnas_moneda = (5, 8, 9, 10, 11, 12, 13, 16, 17, 18)
     fila_excel = 3
     for fila in filas:
-        fila = (list(fila) + [None] * 16)[:16]
+        fila = (list(fila) + [None] * 18)[:18]
         fila[12] = f"=MIN(I{fila_excel}:L{fila_excel})"
         fila[15] = f"=M{fila_excel}*((O{fila_excel}+100)/100)"
+        fila[16] = f"=D{fila_excel}*P{fila_excel}"  # Total de venta
+        fila[17] = f"=D{fila_excel}*M{fila_excel}"  # Total de costos
         for col, valor in enumerate(fila, start=1):
             c = ws.cell(row=fila_excel, column=col, value=valor if valor != "" else None)
             c.alignment = Alignment(horizontal="left", wrap_text=True) if col == 3 else centrado
@@ -501,7 +506,7 @@ def escribir_comparacion_precios_excel(titulo: str, filas: list, salida: Path):
     anchos = {
         "A": 10, "B": 14, "C": 45, "D": 10, "E": 13, "F": 13, "G": 16,
         "H": 15, "I": 12, "J": 12, "K": 12, "L": 12, "M": 15, "N": 16,
-        "O": 8, "P": 13,
+        "O": 8, "P": 13, "Q": 15, "R": 15,
     }
     for letra, ancho in anchos.items():
         ws.column_dimensions[letra].width = ancho

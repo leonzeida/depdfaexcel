@@ -342,7 +342,7 @@
       <button type="button" id="boton-guardar-referencia" disabled>Guardar precios de referencia</button>
       <label class="opcion-modo-manual">
         <input type="checkbox" id="checkbox-modo-manual">
-        Modo manual (editar todo, incluidas las celdas protegidas)
+        Modo manual (editar todo, incluidas las celdas protegidas). Con esto activo, "Proveedor ganador" no se completa solo.
       </label>
     </div>
 
@@ -549,6 +549,8 @@
         '', // Proveedor ganador en vivo (lo calcula el JS, no es una fórmula de celda)
         porcentaje,
         '=M' + fila + '*((O' + fila + '+100)/100)',
+        '=D' + fila + '*P' + fila, // Total de venta = Cantidad x Precio final
+        '=D' + fila + '*M' + fila, // Total de costos = Cantidad x Mejor precio nuevo
       ];
     });
 
@@ -591,8 +593,16 @@
             Object.assign({ type: 'text', title: 'Proveedor 4', width: 120 }, MASCARA_PESOS),
             Object.assign({ type: 'text', title: 'Mejor precio nuevo', width: 140 }, MASCARA_PESOS),
             { type: 'text', title: 'Proveedor ganador', width: 150, readOnly: true },
-            { type: 'text', title: '%', width: 70 },
+            // decimal:',' (sin mask) para que el motor de fórmulas de
+            // jspreadsheet interprete la coma como separador decimal al
+            // usar esta celda en la fórmula de "Precio final" — sin esto,
+            // un valor como "24,8" se calculaba mal (terminaba usando 248,
+            // confirmado leyendo parseNumber() en el bundle fuente). No
+            // lleva mask porque no queremos reformatear lo que se tipea.
+            { type: 'text', title: '%', width: 70, decimal: ',' },
             Object.assign({ type: 'text', title: 'Precio final', width: 130 }, MASCARA_PESOS),
+            Object.assign({ type: 'text', title: 'Total de venta', width: 140 }, MASCARA_PESOS),
+            Object.assign({ type: 'text', title: 'Total de costos', width: 140 }, MASCARA_PESOS),
           ],
         },
       ],
@@ -761,7 +771,13 @@
     const precioFinal = parsePesos(worksheetActual.getValue('P' + fila, true));
     if (precioFinal === null) return null;
 
-    const porcentaje = parsePesos(worksheetActual.getValue('O' + fila, true));
+    // Sin el 2do parámetro (a diferencia de las demás lecturas de esta
+    // función): esta columna no tiene mask, así que getValue(cel, true)
+    // (que devuelve el HTML renderizado) y getValue(cel) (que devuelve el
+    // dato crudo guardado) dan lo mismo hoy, pero para algo que se va a
+    // guardar en la base es más correcto leer el dato crudo, no depender
+    // de cómo se renderizó la celda en pantalla.
+    const porcentaje = parsePesos(worksheetActual.getValue('O' + fila));
     const mejorProveedor = (worksheetActual.getValue('N' + fila) || '').toString().trim() || null;
 
     return {
