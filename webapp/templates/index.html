@@ -239,6 +239,62 @@
     cursor: pointer;
   }
   .opcion-modo-manual input { margin: 0; cursor: pointer; }
+  .agregar-item-envoltorio {
+    position: relative;
+    flex: 1;
+  }
+  .agregar-item-envoltorio button { width: 100%; }
+  .panel-agregar-item {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    width: 340px;
+    max-width: 90vw;
+    background: #ffffff;
+    border: 1px solid #dbe1e8;
+    border-radius: 10px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+    padding: 10px;
+    z-index: 20;
+  }
+  .panel-agregar-item input[type=text] {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid #b7c3dd;
+    border-radius: 8px;
+    font-size: 14px;
+    box-sizing: border-box;
+  }
+  .resultados-agregar-item {
+    max-height: 260px;
+    overflow-y: auto;
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  /* Selector con .panel-agregar-item adelante a propósito: más específico
+     que ".fila-botones-comparar button" (que le pondría flex:1 y
+     estiraría cada resultado para repartirse el alto de la lista). */
+  .panel-agregar-item .resultado-agregar-item {
+    text-align: left;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 6px 8px;
+    cursor: pointer;
+    font-size: 13px;
+    color: #1a2b4c;
+    width: 100%;
+    flex: none;
+    margin-top: 0;
+  }
+  .panel-agregar-item .resultado-agregar-item:hover { background: #f4f8ff; border-color: #4f7cff; }
+  .resultado-agregar-item-vacio {
+    color: #8291ab;
+    font-size: 13px;
+    margin: 6px 2px 2px;
+  }
   .ayuda-formulas {
     text-align: center;
     color: #8291ab;
@@ -276,6 +332,11 @@
     .campo-archivo .selector:hover { background: #232a3d; border-color: #4f7cff; }
     .fila-botones-comparar { background: #1b2030; border-bottom-color: #262c3d; }
     .opcion-modo-manual { color: #9aa8c7; }
+    .panel-agregar-item { background: #1b2030; border-color: #333d55; }
+    .panel-agregar-item input[type=text] { background: #10131a; border-color: #333d55; color: #eef2f7; }
+    .panel-agregar-item .resultado-agregar-item { color: #eef2f7; }
+    .panel-agregar-item .resultado-agregar-item:hover { background: #232a3d; border-color: #4f7cff; }
+    .resultado-agregar-item-vacio { color: #6b7793; }
     .grilla-comparacion-wrap { border-color: #333d55; }
     .titulo-comparacion { background: #3a4522; color: #d4ea6b; }
     .ayuda-formulas { color: #6b7793; }
@@ -338,6 +399,13 @@
          abajo), su contenedor de referencia tiene que ser la tarjeta
          entera, no el div corto del formulario. -->
     <div class="fila-botones-comparar">
+      <div class="agregar-item-envoltorio">
+        <button type="button" id="boton-agregar-item" disabled>+ Agregar ítem</button>
+        <div class="panel-agregar-item" id="panel-agregar-item" hidden>
+          <input type="text" id="buscador-agregar-item" placeholder="Buscar por renglón, código o descripción…" autocomplete="off">
+          <div class="resultados-agregar-item" id="resultados-agregar-item"></div>
+        </div>
+      </div>
       <button type="submit" form="formulario-comparar" id="boton-comparar">Cargar ítems</button>
       <button type="button" id="boton-guardar-referencia" disabled>Guardar precios de referencia</button>
       <label class="opcion-modo-manual">
@@ -487,10 +555,46 @@
   const pdfComparar = document.getElementById('pdf-comparar');
   const nombrePdfComparar = document.getElementById('nombre-pdf-comparar');
   const checkboxModoManual = document.getElementById('checkbox-modo-manual');
+  const botonAgregarItem = document.getElementById('boton-agregar-item');
+  const panelAgregarItem = document.getElementById('panel-agregar-item');
+  const buscadorAgregarItem = document.getElementById('buscador-agregar-item');
+  const resultadosAgregarItem = document.getElementById('resultados-agregar-item');
 
   let worksheetActual = null;
   let itemsActuales = [];
+  let otrosItemsActuales = [];
   let tituloActual = '';
+  // Apunta al recálculo (proveedor ganador + colores) de la grilla vigente;
+  // crearGrillaComparacion lo reasigna cada vez que arma una grilla nueva.
+  // Hace falta porque "Agregar ítem" vive fuera de esa función.
+  let recalcularTodoActual = () => {};
+
+  // Arma las 18 columnas de una fila de la grilla a partir de un item
+  // ({rg, codigo, descripcion, cantidad, ultimo_precio, porcentaje,
+  // actualizado, mejor_proveedor}). La usan tanto la carga inicial del
+  // PDF como "Agregar ítem" (botón de la izquierda), para no duplicar
+  // esta construcción en dos lugares.
+  function construirFilaDatos(item, fila) {
+    const ultimo = item.ultimo_precio === null || item.ultimo_precio === undefined ? '' : item.ultimo_precio;
+    const porcentaje = item.porcentaje === null || item.porcentaje === undefined ? 0 : item.porcentaje;
+    return [
+      item.rg,
+      item.codigo,
+      item.descripcion,
+      item.cantidad,
+      ultimo, // Último precio (de solo lectura, historial)
+      formatearFecha(item.actualizado), // Fecha del último guardado (de solo lectura)
+      item.mejor_proveedor || '', // Proveedor ganador la última vez que se guardó (de solo lectura)
+      ultimo, // Precio de referencia (editable, arranca igual al último precio, no se guarda)
+      '', '', '', '',
+      '=MIN(I' + fila + ':L' + fila + ')',
+      '', // Proveedor ganador en vivo (lo calcula el JS, no es una fórmula de celda)
+      porcentaje,
+      '=M' + fila + '*((O' + fila + '+100)/100)',
+      '=D' + fila + '*P' + fila, // Total de venta = Cantidad x Precio final
+      '=D' + fila + '*M' + fila, // Total de costos = Cantidad x Mejor precio nuevo
+    ];
+  }
 
   // Columnas que normalmente son de solo lectura (coincide exactamente con
   // los "readOnly: true" de la config de columnas de crearGrillaComparacion).
@@ -507,6 +611,96 @@
   checkboxModoManual.addEventListener('change', () => {
     if (worksheetActual) {
       fijarSoloLecturaColumnas(worksheetActual, itemsActuales.length, checkboxModoManual.checked);
+    }
+  });
+
+  // --- "Agregar ítem": ítems del mismo PDF que el comparador descarta
+  // automáticamente por no ser de las categorías habituales (código sin
+  // empezar con 4.01.008/4.01.018), pero que igual se pueden llegar a
+  // necesitar cotizar. Salen de "otros_items" (ya vino junto con el PDF,
+  // no hace falta pedirle nada más al servidor).
+  function normalizarTexto(texto) {
+    return (texto || '').toString().toLowerCase();
+  }
+
+  function coincideConBusqueda(item, termino) {
+    if (!termino) return true;
+    return (
+      normalizarTexto(item.rg).includes(termino) ||
+      normalizarTexto(item.codigo).includes(termino) ||
+      normalizarTexto(item.descripcion).includes(termino)
+    );
+  }
+
+  function renderizarResultadosAgregarItem() {
+    const termino = normalizarTexto(buscadorAgregarItem.value.trim());
+    resultadosAgregarItem.innerHTML = '';
+
+    if (!otrosItemsActuales.length) {
+      const vacio = document.createElement('p');
+      vacio.className = 'resultado-agregar-item-vacio';
+      vacio.textContent = 'Este PDF no tiene otros ítems para agregar (ya están todos en la grilla).';
+      resultadosAgregarItem.appendChild(vacio);
+      return;
+    }
+
+    const filtrados = otrosItemsActuales.filter(it => coincideConBusqueda(it, termino)).slice(0, 30);
+    if (!filtrados.length) {
+      const vacio = document.createElement('p');
+      vacio.className = 'resultado-agregar-item-vacio';
+      vacio.textContent = 'No se encontró ningún ítem con eso.';
+      resultadosAgregarItem.appendChild(vacio);
+      return;
+    }
+
+    filtrados.forEach(it => {
+      const boton = document.createElement('button');
+      boton.type = 'button';
+      boton.className = 'resultado-agregar-item';
+      const encabezado = document.createElement('strong');
+      encabezado.textContent = 'Rg. ' + it.rg + ' — ' + it.codigo;
+      boton.appendChild(encabezado);
+      boton.appendChild(document.createElement('br'));
+      boton.appendChild(document.createTextNode(it.descripcion));
+      boton.addEventListener('click', () => agregarItemAGrilla(it));
+      resultadosAgregarItem.appendChild(boton);
+    });
+  }
+
+  function abrirPanelAgregarItem() {
+    panelAgregarItem.hidden = false;
+    buscadorAgregarItem.value = '';
+    renderizarResultadosAgregarItem();
+    buscadorAgregarItem.focus();
+  }
+
+  function cerrarPanelAgregarItem() {
+    panelAgregarItem.hidden = true;
+  }
+
+  function agregarItemAGrilla(it) {
+    if (!worksheetActual) return;
+    const filaNueva = itemsActuales.length + 1;
+    worksheetActual.insertRow(construirFilaDatos(it, filaNueva));
+    itemsActuales.push(it);
+    otrosItemsActuales = otrosItemsActuales.filter(otro => otro !== it);
+    fijarSoloLecturaColumnas(worksheetActual, itemsActuales.length, checkboxModoManual.checked);
+    recalcularTodoActual();
+    cerrarPanelAgregarItem();
+    mostrarMensaje(mensajeComparar, 'Se agregó el renglón ' + it.rg + ' (' + it.codigo + ') al final de la grilla.', 'exito');
+  }
+
+  botonAgregarItem.addEventListener('click', () => {
+    if (panelAgregarItem.hidden) abrirPanelAgregarItem();
+    else cerrarPanelAgregarItem();
+  });
+  buscadorAgregarItem.addEventListener('input', renderizarResultadosAgregarItem);
+  buscadorAgregarItem.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') cerrarPanelAgregarItem();
+  });
+  document.addEventListener('click', (e) => {
+    if (!panelAgregarItem.hidden && !e.target.closest('.agregar-item-envoltorio')) {
+      cerrarPanelAgregarItem();
     }
   });
 
@@ -531,28 +725,7 @@
     envoltorio.className = 'grilla-comparacion-wrap';
     zonaTablaComparar.appendChild(envoltorio);
 
-    const datos = items.map((item, indice) => {
-      const fila = indice + 1;
-      const ultimo = item.ultimo_precio === null || item.ultimo_precio === undefined ? '' : item.ultimo_precio;
-      const porcentaje = item.porcentaje === null || item.porcentaje === undefined ? 0 : item.porcentaje;
-      return [
-        item.rg,
-        item.codigo,
-        item.descripcion,
-        item.cantidad,
-        ultimo, // Último precio (de solo lectura, historial)
-        formatearFecha(item.actualizado), // Fecha del último guardado (de solo lectura)
-        item.mejor_proveedor || '', // Proveedor ganador la última vez que se guardó (de solo lectura)
-        ultimo, // Precio de referencia (editable, arranca igual al último precio, no se guarda)
-        '', '', '', '',
-        '=MIN(I' + fila + ':L' + fila + ')',
-        '', // Proveedor ganador en vivo (lo calcula el JS, no es una fórmula de celda)
-        porcentaje,
-        '=M' + fila + '*((O' + fila + '+100)/100)',
-        '=D' + fila + '*P' + fila, // Total de venta = Cantidad x Precio final
-        '=D' + fila + '*M' + fila, // Total de costos = Cantidad x Mejor precio nuevo
-      ];
-    });
+    const datos = items.map((item, indice) => construirFilaDatos(item, indice + 1));
 
     const manejarEventoGrilla = (nombreEvento, instancia) => {
       if (nombreEvento === 'onafterchanges' || nombreEvento === 'onchange' || nombreEvento === 'onchangeheader') {
@@ -630,6 +803,7 @@
       }
     };
     const recalcularTodosLosColores = () => recalcularTodo(worksheetActual);
+    recalcularTodoActual = recalcularTodosLosColores;
     recalcularTodosLosColores();
     // Además de onevent/onchange/onchangeheader de jspreadsheet, escuchamos
     // directo los eventos del DOM dentro de la grilla (por si el evento
@@ -653,6 +827,7 @@
     zonaTablaComparar.appendChild(botonDescargarExcel);
 
     botonGuardarReferencia.disabled = false;
+    botonAgregarItem.disabled = false;
   }
 
   async function descargarExcelComparacion(evento) {
@@ -829,7 +1004,10 @@
     ocultarMensaje(mensajeComparar);
     zonaTablaComparar.innerHTML = '';
     worksheetActual = null;
+    otrosItemsActuales = [];
+    cerrarPanelAgregarItem();
     botonGuardarReferencia.disabled = true;
+    botonAgregarItem.disabled = true;
     botonComparar.disabled = true;
     botonComparar.textContent = 'Cargando…';
     cargandoComparar.style.display = 'block';
@@ -843,6 +1021,7 @@
       if (!respuesta.ok) {
         mostrarMensaje(mensajeComparar, cuerpo.error || 'Ocurrió un error al procesar el archivo.', 'error');
       } else {
+        otrosItemsActuales = cuerpo.otros_items || [];
         crearGrillaComparacion(cuerpo.titulo, cuerpo.items);
       }
     } catch (err) {

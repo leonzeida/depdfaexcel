@@ -108,12 +108,22 @@ def extraer_filas_pagina(page):
     return filas
 
 
-def extraer_pdf(pdf_path: Path):
+def extraer_pdf_completo(pdf_path: Path):
+    """Todas las filas de la tabla del PDF, sin filtrar por código (a
+    diferencia de extraer_pdf). La usa el comparador de precios de la web
+    para poder ofrecer también los ítems que no son de las categorías que
+    la empresa cotiza habitualmente."""
     with pdfplumber.open(pdf_path) as pdf:
         filas = []
         for page in pdf.pages:
             filas.extend(extraer_filas_pagina(page))
-    return [f for f in filas if f["codigo"].startswith(PREFIJOS_CODIGO)]
+    return filas
+
+
+def extraer_pdf(pdf_path: Path):
+    """Solo los ítems cuyo código empieza con los prefijos que la empresa
+    cotiza habitualmente (PREFIJOS_CODIGO)."""
+    return [f for f in extraer_pdf_completo(pdf_path) if f["codigo"].startswith(PREFIJOS_CODIGO)]
 
 
 def extraer_encabezado(pdf_path: Path):

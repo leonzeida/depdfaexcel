@@ -17,6 +17,7 @@ from flask import Flask, jsonify, render_template, request
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from f41_a_excel import (  # noqa: E402
+    PREFIJOS_CODIGO,
     clave_item,
     escribir_comparacion_precios_excel,
     escribir_notas_pedido,
@@ -24,6 +25,7 @@ from f41_a_excel import (  # noqa: E402
     expediente_slug,
     extraer_encabezado,
     extraer_pdf,
+    extraer_pdf_completo,
     linea_de_pedido,
     nombre_archivo_notas_pedido,
 )
@@ -93,12 +95,15 @@ def items_para_comparar():
         archivo.save(pdf_path)
 
         try:
-            filas = extraer_pdf(pdf_path)
+            todas_las_filas = extraer_pdf_completo(pdf_path)
             encabezado = extraer_encabezado(pdf_path)
         except Exception:
             return jsonify(
                 error="No se pudo leer ese PDF. Revisá que sea un Pedido de Cotización F.41 válido."
             ), 400
+
+        filas = [f for f in todas_las_filas if f["codigo"].startswith(PREFIJOS_CODIGO)]
+        otras_filas = [f for f in todas_las_filas if not f["codigo"].startswith(PREFIJOS_CODIGO)]
 
         if not filas:
             return jsonify(error="No se encontraron items en la tabla de ese PDF."), 400
@@ -111,23 +116,31 @@ def items_para_comparar():
             error="No se pudo conectar con la base de precios de referencia. Probá de nuevo en un momento."
         ), 502
 
-    items = []
-    for item in filas:
+    def _mapear_item(item):
         datos = referencias.get(clave_item(item["codigo"], item["descripcion"]), {})
-        items.append(
-            {
-                "rg": item["rg"],
-                "codigo": item["codigo"],
-                "descripcion": item["descripcion"],
-                "cantidad": item["cantidad"],
-                "ultimo_precio": datos.get("ultimo_precio"),
-                "porcentaje": datos.get("porcentaje"),
-                "actualizado": datos.get("actualizado"),
-                "mejor_proveedor": datos.get("mejor_proveedor"),
-            }
-        )
+        return {
+            "rg": item["rg"],
+            "codigo": item["codigo"],
+            "descripcion": item["descripcion"],
+            "cantidad": item["cantidad"],
+            "ultimo_precio": datos.get("ultimo_precio"),
+            "porcentaje": datos.get("porcentaje"),
+            "actualizado": datos.get("actualizado"),
+            "mejor_proveedor": datos.get("mejor_proveedor"),
+        }
 
-    return jsonify(titulo=linea_de_pedido(encabezado, incluir_titulo=False), items=items)
+    items = [_mapear_item(item) for item in filas]
+    # Ítems del mismo PDF cuyo código no es de las categorías habituales
+    # (PREFIJOS_CODIGO): el comparador los deja afuera de la carga
+    # automática, pero el usuario los puede buscar y agregar a mano con
+    # el botón "Agregar ítem".
+    otros_items = [_mapear_item(item) for item in otras_filas]
+
+    return jsonify(
+        titulo=linea_de_pedido(encabezado, incluir_titulo=False),
+        items=items,
+        otros_items=otros_items,
+    )
 
 
 @app.route("/guardar_referencia", methods=["POST"])
