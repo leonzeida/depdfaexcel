@@ -301,6 +301,13 @@
     font-size: 13px;
     margin: 10px 0 0;
   }
+  .total-general-pedido {
+    text-align: right;
+    font-weight: 700;
+    font-size: 15px;
+    margin: 10px 2px 0;
+    color: #1a2b4c;
+  }
   .boton-descarga-discreta {
     display: block;
     width: auto;
@@ -340,6 +347,7 @@
     .grilla-comparacion-wrap { border-color: #333d55; }
     .titulo-comparacion { background: #3a4522; color: #d4ea6b; }
     .ayuda-formulas { color: #6b7793; }
+    .total-general-pedido { color: #eef2f7; }
     .boton-descarga-discreta { color: #9aa8c7; border-color: #333d55; }
     .boton-descarga-discreta:hover { background: #232a3d; border-color: #4f7cff; color: #eef2f7; }
     .boton-descarga-discreta:disabled { color: #4a5570; border-color: #262c3d; }
@@ -415,6 +423,36 @@
     </div>
 
     <div id="zona-tabla-comparar"></div>
+  </div>
+
+  <div class="tarjeta">
+    <div class="ancho-angosto">
+      <h2>Armar pedido de cotización para proveedores</h2>
+      <p class="subtitulo">Subí un F.41 para traer la lista de ítems. Armala a tu gusto (agregá, sacá o reordená renglones) y generá el PDF para mandarles a tus proveedores.</p>
+
+      <div class="mensaje" id="mensaje-pedido"></div>
+
+      <form id="formulario-pedido" action="/items_para_editor" method="post" enctype="multipart/form-data">
+        <div class="campo-archivo">
+          <label class="etiqueta-campo" for="pdf-pedido">PDF del F.41</label>
+          <label class="selector" for="pdf-pedido">
+            <span class="nombre" id="nombre-pdf-pedido">Ningún archivo elegido</span>
+            <span class="boton-elegir">Elegir PDF</span>
+          </label>
+          <input type="file" id="pdf-pedido" name="pdf" accept="application/pdf,.pdf" required>
+        </div>
+      </form>
+      <div class="cargando" id="cargando-pedido">Cargando los ítems, un momento…</div>
+    </div>
+
+    <div class="fila-botones-comparar">
+      <button type="submit" form="formulario-pedido" id="boton-cargar-pedido">Cargar ítems</button>
+      <button type="button" id="boton-agregar-renglon" disabled>+ Agregar renglón</button>
+      <button type="button" id="boton-eliminar-renglon" disabled>Eliminar renglón seleccionado</button>
+      <button type="button" id="boton-generar-pedido-pdf" disabled>Generar PDF</button>
+    </div>
+
+    <div id="zona-tabla-pedido"></div>
   </div>
 
 </div>
@@ -1035,6 +1073,249 @@
     }
     botonComparar.disabled = false;
     botonComparar.textContent = 'Cargar ítems';
+  });
+
+  // --- Tarjeta 3: armar pedido de cotización para proveedores ---
+  const formularioPedido = document.getElementById('formulario-pedido');
+  const botonCargarPedido = document.getElementById('boton-cargar-pedido');
+  const cargandoPedido = document.getElementById('cargando-pedido');
+  const mensajePedido = document.getElementById('mensaje-pedido');
+  const zonaTablaPedido = document.getElementById('zona-tabla-pedido');
+  const pdfPedido = document.getElementById('pdf-pedido');
+  const nombrePdfPedido = document.getElementById('nombre-pdf-pedido');
+  const botonAgregarRenglon = document.getElementById('boton-agregar-renglon');
+  const botonEliminarRenglon = document.getElementById('boton-eliminar-renglon');
+  const botonGenerarPedidoPdf = document.getElementById('boton-generar-pedido-pdf');
+
+  let worksheetPedido = null;
+  let totalGeneralPedidoEl = null;
+
+  pdfPedido.addEventListener('change', () => {
+    nombrePdfPedido.textContent = pdfPedido.files[0] ? pdfPedido.files[0].name : 'Ningún archivo elegido';
+  });
+
+  // Renglón, Código, Descripción, Cantidad: tal cual vienen (o vacíos,
+  // para un renglón agregado a mano). Precio unitario y Total arrancan
+  // vacíos: el Total se completa solo apenas haya Cantidad y Precio
+  // unitario cargados (ver recalcularTotalPedido).
+  function construirFilaDatosPedido(item) {
+    return [item.rg, item.codigo, item.descripcion, item.cantidad, '', ''];
+  }
+
+  // A diferencia del comparador (que solo agrega filas al final),
+  // acá se puede reordenar y borrar renglones en cualquier posición. Se
+  // confirmó leyendo el bundle fuente de jspreadsheet que insertRow/
+  // deleteRow NO reacomodan el texto de fórmulas ya escritas en otras
+  // celdas (una "=D5*E5" se queda apuntando a la fila 5 literal aunque
+  // esa fila se mueva o se borre otra arriba). Por eso "Total" NO es una
+  // fórmula de celda: se recalcula a mano con JS, leyendo siempre la fila
+  // ACTUAL de Cantidad/Precio unitario, así que sobrevive sin problema a
+  // que se reordenen o borren renglones.
+  function recalcularTotalPedido(ws, fila) {
+    const cantidad = parsePesos(ws.getValue('D' + fila));
+    const precioUnitario = parsePesos(ws.getValue('E' + fila, true));
+    if (cantidad === null || precioUnitario === null) return;
+    const total = cantidad * precioUnitario;
+    if (parsePesos(ws.getValue('F' + fila, true)) !== total) {
+      ws.setValue('F' + fila, total);
+    }
+  }
+
+  function recalcularTotalGeneralPedido() {
+    if (!worksheetPedido || !totalGeneralPedidoEl) return;
+    const cantidadFilas = worksheetPedido.getData().length;
+    let suma = 0;
+    for (let fila = 1; fila <= cantidadFilas; fila++) {
+      const total = parsePesos(worksheetPedido.getValue('F' + fila, true));
+      if (total !== null) suma += total;
+    }
+    totalGeneralPedidoEl.textContent = 'Total general: $ ' + suma.toLocaleString('es-AR', {
+      minimumFractionDigits: 2, maximumFractionDigits: 2,
+    });
+  }
+
+  function celdaDesdeElemento(elemento) {
+    const celda = elemento && elemento.closest ? elemento.closest('td[data-x]') : null;
+    if (!celda) return null;
+    const x = parseInt(celda.getAttribute('data-x'));
+    const y = parseInt(celda.getAttribute('data-y'));
+    if (isNaN(x) || isNaN(y)) return null;
+    return { x, y };
+  }
+
+  // Columnas 0-based: A=0 Renglón, B=1 Código, C=2 Descripción,
+  // D=3 Cantidad, E=4 Precio unitario, F=5 Total.
+  function manejarCambioCeldaPedido(ws, x, y) {
+    if (x === 3 || x === 4) {
+      recalcularTotalPedido(ws, y + 1);
+    }
+    recalcularTotalGeneralPedido();
+  }
+
+  function crearGrillaPedido(items) {
+    zonaTablaPedido.innerHTML = '';
+    worksheetPedido = null;
+
+    const envoltorio = document.createElement('div');
+    envoltorio.className = 'grilla-comparacion-wrap';
+    zonaTablaPedido.appendChild(envoltorio);
+
+    const datos = items.map(construirFilaDatosPedido);
+
+    const manejarEventoGrillaPedido = (nombreEvento, instancia, celda, x, y) => {
+      if (nombreEvento === 'onchange' && typeof x === 'number' && typeof y === 'number') {
+        manejarCambioCeldaPedido(instancia, x, y);
+      } else if (nombreEvento === 'onafterchanges') {
+        recalcularTotalGeneralPedido();
+      }
+    };
+
+    const instancias = jspreadsheet(envoltorio, {
+      onevent: manejarEventoGrillaPedido,
+      worksheets: [
+        {
+          data: datos,
+          columnSorting: false,
+          onevent: manejarEventoGrillaPedido,
+          // Mismo motivo que la grilla del comparador: scroll interno
+          // propio (encabezado fijo + scroll horizontal contenido) en vez
+          // de scrollear toda la página.
+          tableOverflow: true,
+          tableWidth: '100%',
+          tableHeight: '65vh',
+          columns: [
+            { type: 'numeric', title: 'Renglón', width: 70 },
+            { type: 'text', title: 'Código', width: 120 },
+            { type: 'text', title: 'Descripción', width: 340, align: 'left', wordWrap: true },
+            { type: 'numeric', title: 'Cantidad', width: 90 },
+            Object.assign({ type: 'text', title: 'Precio unitario', width: 140 }, MASCARA_PESOS),
+            Object.assign({ type: 'text', title: 'Total', width: 140 }, MASCARA_PESOS),
+          ],
+        },
+      ],
+    });
+    worksheetPedido = instancias[0];
+
+    // Respaldo además del evento propio de jspreadsheet (mismo criterio
+    // ya usado en el comparador): keyup/blur directo sobre la grilla,
+    // detectando la celda tocada por sus atributos data-x/data-y.
+    const manejarInteraccion = (evento) => {
+      const celda = celdaDesdeElemento(evento.target);
+      if (celda) manejarCambioCeldaPedido(worksheetPedido, celda.x, celda.y);
+      else recalcularTotalGeneralPedido();
+    };
+    envoltorio.addEventListener('keyup', manejarInteraccion);
+    envoltorio.addEventListener('blur', manejarInteraccion, true);
+    envoltorio.addEventListener('click', recalcularTotalGeneralPedido);
+
+    const ayuda = document.createElement('p');
+    ayuda.className = 'ayuda-formulas';
+    ayuda.textContent = 'Podés editar cualquier celda. "Total" se calcula solo (Cantidad × Precio unitario) pero se puede pisar a mano. Arrastrá una fila por el borde izquierdo para reordenarla, o hacé clic derecho sobre una celda para insertar o borrar renglones.';
+    zonaTablaPedido.appendChild(ayuda);
+
+    totalGeneralPedidoEl = document.createElement('p');
+    totalGeneralPedidoEl.className = 'total-general-pedido';
+    zonaTablaPedido.appendChild(totalGeneralPedidoEl);
+    recalcularTotalGeneralPedido();
+
+    botonAgregarRenglon.disabled = false;
+    botonEliminarRenglon.disabled = false;
+    botonGenerarPedidoPdf.disabled = false;
+  }
+
+  botonAgregarRenglon.addEventListener('click', () => {
+    if (!worksheetPedido) return;
+    worksheetPedido.insertRow(construirFilaDatosPedido({ rg: '', codigo: '', descripcion: '', cantidad: '' }));
+  });
+
+  botonEliminarRenglon.addEventListener('click', () => {
+    if (!worksheetPedido) return;
+    if (worksheetPedido.getData().length <= 1) {
+      mostrarMensaje(mensajePedido, 'Tiene que quedar al menos un renglón.', 'error');
+      return;
+    }
+    if (!confirm('¿Eliminar el renglón seleccionado? (si no hay ninguno marcado, se borra el último)')) return;
+    worksheetPedido.deleteRow();
+    recalcularTotalGeneralPedido();
+  });
+
+  async function generarPedidoPdf() {
+    if (!worksheetPedido) return;
+    const boton = botonGenerarPedidoPdf;
+    boton.disabled = true;
+    boton.textContent = 'Generando…';
+
+    try {
+      const cantidadFilas = worksheetPedido.getData().length;
+      const filas = [];
+      for (let fila = 1; fila <= cantidadFilas; fila++) {
+        filas.push({
+          rg: worksheetPedido.getValue('A' + fila),
+          codigo: worksheetPedido.getValue('B' + fila),
+          descripcion: worksheetPedido.getValue('C' + fila),
+          cantidad: worksheetPedido.getValue('D' + fila),
+          precio_unitario: parsePesos(worksheetPedido.getValue('E' + fila, true)),
+          total: parsePesos(worksheetPedido.getValue('F' + fila, true)),
+        });
+      }
+      const respuesta = await fetch('/generar_pedido_pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filas: filas }),
+      });
+      const cuerpo = await respuesta.json().catch(() => ({}));
+      if (!respuesta.ok) {
+        mostrarMensaje(mensajePedido, cuerpo.error || 'No se pudo generar el PDF.', 'error');
+      } else {
+        const archivo = cuerpo.archivos[0];
+        const blob = base64AArchivo(archivo.datos, 'application/pdf');
+        const url = URL.createObjectURL(blob);
+        const enlace = document.createElement('a');
+        enlace.href = url;
+        enlace.download = archivo.nombre;
+        document.body.appendChild(enlace);
+        enlace.click();
+        enlace.remove();
+        URL.revokeObjectURL(url);
+        mostrarMensaje(mensajePedido, '✅ PDF generado y descargado.', 'exito');
+      }
+    } catch (err) {
+      mostrarMensaje(mensajePedido, 'No se pudo conectar con la página. Volvé a intentar.', 'error');
+    }
+    boton.disabled = false;
+    boton.textContent = 'Generar PDF';
+  }
+  botonGenerarPedidoPdf.addEventListener('click', generarPedidoPdf);
+
+  formularioPedido.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    ocultarMensaje(mensajePedido);
+    zonaTablaPedido.innerHTML = '';
+    worksheetPedido = null;
+    botonAgregarRenglon.disabled = true;
+    botonEliminarRenglon.disabled = true;
+    botonGenerarPedidoPdf.disabled = true;
+    botonCargarPedido.disabled = true;
+    botonCargarPedido.textContent = 'Cargando…';
+    cargandoPedido.style.display = 'block';
+
+    try {
+      const datos = new FormData(formularioPedido);
+      const respuesta = await fetch('/items_para_editor', { method: 'POST', body: datos });
+      const cuerpo = await respuesta.json().catch(() => ({}));
+      cargandoPedido.style.display = 'none';
+
+      if (!respuesta.ok) {
+        mostrarMensaje(mensajePedido, cuerpo.error || 'Ocurrió un error al procesar el archivo.', 'error');
+      } else {
+        crearGrillaPedido(cuerpo.items);
+      }
+    } catch (err) {
+      cargandoPedido.style.display = 'none';
+      mostrarMensaje(mensajePedido, 'No se pudo conectar con la página. Volvé a intentar.', 'error');
+    }
+    botonCargarPedido.disabled = false;
+    botonCargarPedido.textContent = 'Cargar ítems';
   });
 </script>
 </body>

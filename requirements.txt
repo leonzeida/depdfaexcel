@@ -3,3 +3,5 @@ pdfplumber
 openpyxl
 gunicorn
 psycopg[binary]
+reportlab
+num2words

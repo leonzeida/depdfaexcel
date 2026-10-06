@@ -30,6 +30,7 @@ from f41_a_excel import (  # noqa: E402
     nombre_archivo_notas_pedido,
 )
 from db_referencia import ErrorPreciosReferencia, guardar_precios_referencia, leer_precios_referencia
+from generar_pedido_pdf import escribir_pedido_cotizacion_pdf
 
 app = Flask(__name__)
 PUERTO = 5000
@@ -213,6 +214,63 @@ def exportar_comparacion():
         datos = base64.b64encode(salida.read_bytes()).decode("ascii")
 
     return jsonify(archivos=[{"etiqueta": "Comparación", "nombre": salida.name, "datos": datos}])
+
+
+@app.route("/items_para_editor", methods=["POST"])
+def items_para_editor():
+    archivo = request.files.get("pdf")
+    if not archivo or archivo.filename == "":
+        return jsonify(error="Elegí un archivo PDF antes de continuar."), 400
+
+    if not archivo.filename.lower().endswith(".pdf"):
+        return jsonify(error="El archivo tiene que ser un PDF."), 400
+
+    with tempfile.TemporaryDirectory() as tmp:
+        pdf_path = Path(tmp) / archivo.filename
+        archivo.save(pdf_path)
+
+        try:
+            todas_las_filas = extraer_pdf_completo(pdf_path)
+        except Exception:
+            return jsonify(
+                error="No se pudo leer ese PDF. Revisá que sea un Pedido de Cotización F.41 válido."
+            ), 400
+
+        if not todas_las_filas:
+            return jsonify(error="No se encontraron items en la tabla de ese PDF."), 400
+
+    items = [
+        {
+            "rg": item["rg"],
+            "codigo": item["codigo"],
+            "descripcion": item["descripcion"],
+            "cantidad": item["cantidad"],
+        }
+        for item in todas_las_filas
+    ]
+
+    return jsonify(items=items)
+
+
+@app.route("/generar_pedido_pdf", methods=["POST"])
+def generar_pedido_pdf():
+    cuerpo = request.get_json(silent=True) or {}
+    filas = cuerpo.get("filas") or []
+
+    if not isinstance(filas, list) or not filas:
+        return jsonify(error="No hay renglones cargados para generar el PDF."), 400
+
+    with tempfile.TemporaryDirectory() as tmp:
+        salida = Path(tmp) / "Pedido de cotizacion.pdf"
+        try:
+            escribir_pedido_cotizacion_pdf(filas, salida)
+        except Exception as exc:
+            print(f"[generar-pedido-pdf] Fallo generando el PDF: {exc}", file=sys.stderr, flush=True)
+            return jsonify(error="No se pudo generar el PDF del pedido."), 500
+
+        datos = base64.b64encode(salida.read_bytes()).decode("ascii")
+
+    return jsonify(archivos=[{"etiqueta": "Pedido de cotización", "nombre": salida.name, "datos": datos}])
 
 
 def abrir_navegador():
