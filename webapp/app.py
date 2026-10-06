@@ -7,6 +7,7 @@ f41_a_excel.py.
 """
 
 import base64
+import json
 import sys
 import tempfile
 import threading
@@ -30,7 +31,7 @@ from f41_a_excel import (  # noqa: E402
     nombre_archivo_notas_pedido,
 )
 from db_referencia import ErrorPreciosReferencia, guardar_precios_referencia, leer_precios_referencia
-from generar_pedido_pdf import escribir_pedido_cotizacion_pdf
+from editar_f41_pdf import generar_f41_editado
 
 app = Flask(__name__)
 PUERTO = 5000
@@ -252,25 +253,39 @@ def items_para_editor():
     return jsonify(items=items)
 
 
-@app.route("/generar_pedido_pdf", methods=["POST"])
-def generar_pedido_pdf():
-    cuerpo = request.get_json(silent=True) or {}
-    filas = cuerpo.get("filas") or []
+@app.route("/generar_f41_editado", methods=["POST"])
+def generar_f41_editado_ruta():
+    archivo = request.files.get("pdf")
+    if not archivo or archivo.filename == "":
+        return jsonify(error="Hace falta volver a adjuntar el PDF original para generar el F.41 editado."), 400
+
+    if not archivo.filename.lower().endswith(".pdf"):
+        return jsonify(error="El archivo tiene que ser un PDF."), 400
+
+    try:
+        filas = json.loads(request.form.get("filas", ""))
+    except (TypeError, ValueError):
+        filas = None
 
     if not isinstance(filas, list) or not filas:
         return jsonify(error="No hay renglones cargados para generar el PDF."), 400
 
     with tempfile.TemporaryDirectory() as tmp:
-        salida = Path(tmp) / "Pedido de cotizacion.pdf"
+        pdf_path = Path(tmp) / archivo.filename
+        archivo.save(pdf_path)
+
+        salida = Path(tmp) / "F41 editado.pdf"
         try:
-            escribir_pedido_cotizacion_pdf(filas, salida)
+            generar_f41_editado(pdf_path, filas, salida)
         except Exception as exc:
-            print(f"[generar-pedido-pdf] Fallo generando el PDF: {exc}", file=sys.stderr, flush=True)
-            return jsonify(error="No se pudo generar el PDF del pedido."), 500
+            print(f"[generar-f41-editado] Fallo generando el PDF: {exc}", file=sys.stderr, flush=True)
+            return jsonify(
+                error="No se pudo generar el F.41 editado. Revisá que el PDF original sea un F.41 válido."
+            ), 500
 
         datos = base64.b64encode(salida.read_bytes()).decode("ascii")
 
-    return jsonify(archivos=[{"etiqueta": "Pedido de cotización", "nombre": salida.name, "datos": datos}])
+    return jsonify(archivos=[{"etiqueta": "F.41 editado", "nombre": salida.name, "datos": datos}])
 
 
 def abrir_navegador():

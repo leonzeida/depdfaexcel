@@ -427,8 +427,8 @@
 
   <div class="tarjeta">
     <div class="ancho-angosto">
-      <h2>Armar pedido de cotización para proveedores</h2>
-      <p class="subtitulo">Subí un F.41 para traer la lista de ítems. Armala a tu gusto (agregá, sacá o reordená renglones) y generá el PDF para mandarles a tus proveedores.</p>
+      <h2>Editar F.41 para mandar a proveedores</h2>
+      <p class="subtitulo">Subí un F.41 y editá su tabla de ítems (agregá, sacá, reordená renglones y cargá precios). El PDF que se genera es el mismo F.41 original, con la tabla editada — mismo membrete, mismo texto legal.</p>
 
       <div class="mensaje" id="mensaje-pedido"></div>
 
@@ -449,7 +449,7 @@
       <button type="submit" form="formulario-pedido" id="boton-cargar-pedido">Cargar ítems</button>
       <button type="button" id="boton-agregar-renglon" disabled>+ Agregar renglón</button>
       <button type="button" id="boton-eliminar-renglon" disabled>Eliminar renglón seleccionado</button>
-      <button type="button" id="boton-generar-pedido-pdf" disabled>Generar PDF</button>
+      <button type="button" id="boton-generar-pedido-pdf" disabled>Generar F.41 editado</button>
     </div>
 
     <div id="zona-tabla-pedido"></div>
@@ -1241,6 +1241,13 @@
 
   async function generarPedidoPdf() {
     if (!worksheetPedido) return;
+    // Hace falta el PDF original de nuevo (no solo los renglones editados):
+    // el F.41 editado reusa el membrete y el texto legal del PDF que se
+    // subió, recortados de ahí directamente.
+    if (!pdfPedido.files[0]) {
+      mostrarMensaje(mensajePedido, 'Volvé a elegir el PDF original antes de generar (hace falta para mantener el membrete y el texto legal).', 'error');
+      return;
+    }
     const boton = botonGenerarPedidoPdf;
     boton.disabled = true;
     boton.textContent = 'Generando…';
@@ -1258,11 +1265,10 @@
           total: parsePesos(worksheetPedido.getValue('F' + fila, true)),
         });
       }
-      const respuesta = await fetch('/generar_pedido_pdf', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filas: filas }),
-      });
+      const datosFormulario = new FormData();
+      datosFormulario.append('pdf', pdfPedido.files[0]);
+      datosFormulario.append('filas', JSON.stringify(filas));
+      const respuesta = await fetch('/generar_f41_editado', { method: 'POST', body: datosFormulario });
       const cuerpo = await respuesta.json().catch(() => ({}));
       if (!respuesta.ok) {
         mostrarMensaje(mensajePedido, cuerpo.error || 'No se pudo generar el PDF.', 'error');
@@ -1277,13 +1283,13 @@
         enlace.click();
         enlace.remove();
         URL.revokeObjectURL(url);
-        mostrarMensaje(mensajePedido, '✅ PDF generado y descargado.', 'exito');
+        mostrarMensaje(mensajePedido, '✅ F.41 editado generado y descargado.', 'exito');
       }
     } catch (err) {
       mostrarMensaje(mensajePedido, 'No se pudo conectar con la página. Volvé a intentar.', 'error');
     }
     boton.disabled = false;
-    boton.textContent = 'Generar PDF';
+    boton.textContent = 'Generar F.41 editado';
   }
   botonGenerarPedidoPdf.addEventListener('click', generarPedidoPdf);
 
