@@ -1134,15 +1134,6 @@
     });
   }
 
-  function celdaDesdeElemento(elemento) {
-    const celda = elemento && elemento.closest ? elemento.closest('td[data-x]') : null;
-    if (!celda) return null;
-    const x = parseInt(celda.getAttribute('data-x'));
-    const y = parseInt(celda.getAttribute('data-y'));
-    if (isNaN(x) || isNaN(y)) return null;
-    return { x, y };
-  }
-
   // Columnas 0-based: A=0 Renglón, B=1 Código, C=2 Descripción,
   // D=3 Cantidad, E=4 Precio unitario, F=5 Total.
   function manejarCambioCeldaPedido(ws, x, y) {
@@ -1162,10 +1153,31 @@
 
     const datos = items.map(construirFilaDatosPedido);
 
-    const manejarEventoGrillaPedido = (nombreEvento, instancia, celda, x, y) => {
+    // "onchange" llega como (worksheet, celdaDOM, x, y, valorNuevo,
+    // valorViejo) -- se dispara DENTRO del guardado real de la celda, así
+    // que para cuando llega acá, Cantidad/Precio unitario ya están
+    // actualizados en los datos de la grilla (confirmado leyendo
+    // updateCell() en el bundle fuente: primero graba el dato, recién
+    // después despacha "onchange"). Por eso es el único lugar donde
+    // calculamos el Total: leer en cualquier otro momento (por ejemplo en
+    // un "blur" de la grilla entera, que llega ANTES de que la celda se
+    // termine de confirmar) traía el valor viejo y escribía un Total
+    // mal calculado.
+    //
+    // "onafterchanges" llega como (worksheet, cambios), con `cambios` un
+    // array de {x,y,value,oldValue} -- se usa como respaldo, para los
+    // casos (pegar varias celdas, etc.) donde puede no haber un
+    // "onchange" por cada celda.
+    const manejarEventoGrillaPedido = (nombreEvento, instancia, segundoArgumento, x, y) => {
       if (nombreEvento === 'onchange' && typeof x === 'number' && typeof y === 'number') {
         manejarCambioCeldaPedido(instancia, x, y);
       } else if (nombreEvento === 'onafterchanges') {
+        const cambios = Array.isArray(segundoArgumento) ? segundoArgumento : [];
+        cambios.forEach((cambio) => {
+          if (cambio && (cambio.x === 3 || cambio.x === 4)) {
+            manejarCambioCeldaPedido(instancia, cambio.x, cambio.y);
+          }
+        });
         recalcularTotalGeneralPedido();
       }
     };
@@ -1196,16 +1208,14 @@
     });
     worksheetPedido = instancias[0];
 
-    // Respaldo además del evento propio de jspreadsheet (mismo criterio
-    // ya usado en el comparador): keyup/blur directo sobre la grilla,
-    // detectando la celda tocada por sus atributos data-x/data-y.
-    const manejarInteraccion = (evento) => {
-      const celda = celdaDesdeElemento(evento.target);
-      if (celda) manejarCambioCeldaPedido(worksheetPedido, celda.x, celda.y);
-      else recalcularTotalGeneralPedido();
-    };
-    envoltorio.addEventListener('keyup', manejarInteraccion);
-    envoltorio.addEventListener('blur', manejarInteraccion, true);
+    // Respaldo además del evento propio de jspreadsheet: refrescar el
+    // total general en cualquier interacción con la grilla. Ojo: esto NO
+    // recalcula el Total de una fila (eso lo hace únicamente "onchange",
+    // ver arriba) -- nada más vuelve a sumar lo que ya esté en la
+    // columna Total en ese momento, así que no tiene el problema de leer
+    // datos todavía no confirmados.
+    envoltorio.addEventListener('keyup', recalcularTotalGeneralPedido);
+    envoltorio.addEventListener('focusout', recalcularTotalGeneralPedido);
     envoltorio.addEventListener('click', recalcularTotalGeneralPedido);
 
     const ayuda = document.createElement('p');
