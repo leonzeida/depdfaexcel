@@ -1088,6 +1088,7 @@
   const botonGenerarPedidoPdf = document.getElementById('boton-generar-pedido-pdf');
 
   let worksheetPedido = null;
+  let envoltorioPedido = null;
   let totalGeneralPedidoEl = null;
 
   pdfPedido.addEventListener('change', () => {
@@ -1127,10 +1128,31 @@
   let totalesAutoPedido = {}; // fila -> último Total que escribió ESTA función (para no pisar una edición manual)
   let intervaloTotalesPedido = null;
 
+  // Mientras una celda está en edición, jspreadsheet vacía su innerHTML y
+  // mete ahí el <input> del editor (confirmado en rondas anteriores
+  // leyendo openEditor() en el bundle fuente). getValue(celda, true) -que
+  // es como se lee Precio unitario, por tener máscara- devuelve
+  // justamente ese innerHTML, así que si el intervalo cae mientras el
+  // usuario todavía está tipeando, puede leer ese HTML del editor en vez
+  // de un número limpio y calcular cualquier cosa. Por eso, antes de
+  // calcular, se fija si la fila tiene a Cantidad o Precio unitario en
+  // edición en ese momento y, si es así, la salta por esta vuelta.
+  function filaEnEdicion() {
+    if (!envoltorioPedido) return null;
+    const celdaEditando = envoltorioPedido.querySelector('td.editor');
+    if (!celdaEditando) return null;
+    const x = parseInt(celdaEditando.getAttribute('data-x'));
+    const y = parseInt(celdaEditando.getAttribute('data-y'));
+    if ((x === 3 || x === 4) && !isNaN(y)) return y + 1;
+    return null;
+  }
+
   function recalcularTodosLosTotalesPedido() {
     if (!worksheetPedido) return;
+    const filaSalteada = filaEnEdicion();
     const cantidadFilas = worksheetPedido.getData().length;
     for (let fila = 1; fila <= cantidadFilas; fila++) {
+      if (fila === filaSalteada) continue;
       const cantidad = parsePesos(worksheetPedido.getValue('D' + fila));
       const precioUnitario = parsePesos(worksheetPedido.getValue('E' + fila, true));
       if (cantidad === null || precioUnitario === null) continue;
@@ -1170,6 +1192,7 @@
     const envoltorio = document.createElement('div');
     envoltorio.className = 'grilla-comparacion-wrap';
     zonaTablaPedido.appendChild(envoltorio);
+    envoltorioPedido = envoltorio;
 
     const datos = items.map(construirFilaDatosPedido);
 

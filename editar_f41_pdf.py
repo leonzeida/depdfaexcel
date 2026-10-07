@@ -259,23 +259,35 @@ def generar_f41_editado(pdf_original_path: Path, filas: list, salida: Path):
             _celda_precio(total, ancho_total),
         ])
 
+    PADDING_VERTICAL_FILA = 7  # más generoso que PADDING_CELDA: en el original
+    # los renglones de datos se separan solo por espacio en blanco, sin
+    # ninguna línea entre ellos, así que necesitan más aire para no
+    # verse amontonados.
+
     tabla = Table(filas_tabla, colWidths=anchos_columnas, repeatRows=1)
     tabla.setStyle(TableStyle([
-        # Sin líneas verticales internas a propósito: confirmado celda por
-        # celda en el PDF original que no tiene ninguna -- cada fila es
-        # una sola caja con borde izq/der y una línea abajo; las columnas
-        # existen solo porque el texto arranca siempre en la misma
-        # posición X. Replicar eso (en vez de una grilla tipo planilla)
-        # es lo que hace que se vea igual al original.
+        # Sin líneas verticales internas, y sin línea entre renglones de
+        # datos, a propósito: confirmado renderizando una imagen de la
+        # tabla del PDF original (no solo mirando las coordenadas) que
+        # solo tiene el marco exterior y una línea debajo del encabezado
+        # de columnas -- los renglones de datos se separan nada más que
+        # por espacio en blanco.
         ("BOX", (0, 0), (-1, -1), 0.5, colors.black),
-        ("LINEBELOW", (0, 0), (-1, -1), 0.5, colors.black),
+        ("LINEBELOW", (0, 0), (-1, 0), 0.5, colors.black),
         ("FONTNAME", (0, 0), (-1, -1), FUENTE_TABLA),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
         ("FONTSIZE", (0, 0), (-1, -1), TAMANO_TABLA),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-        ("TOPPADDING", (0, 0), (-1, -1), PADDING_CELDA),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), PADDING_CELDA),
+        # "P.Unit."/"Total" del encabezado van a la derecha (igual que el
+        # original); el resto -- incluidas esas mismas columnas en las
+        # filas de datos, donde el "$...puntos" ya arranca siempre a la
+        # izquierda -- se queda alineado a la izquierda.
+        ("ALIGN", (4, 0), (5, 0), "RIGHT"),
+        ("TOPPADDING", (0, 0), (-1, 0), PADDING_CELDA),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), PADDING_CELDA),
+        ("TOPPADDING", (0, 1), (-1, -1), PADDING_VERTICAL_FILA),
+        ("BOTTOMPADDING", (0, 1), (-1, -1), PADDING_VERTICAL_FILA),
         ("LEFTPADDING", (0, 0), (-1, -1), PADDING_CELDA),
         ("RIGHTPADDING", (0, 0), (-1, -1), PADDING_CELDA),
     ]))
