@@ -1097,7 +1097,7 @@
   // Renglón, Código, Descripción, Cantidad: tal cual vienen (o vacíos,
   // para un renglón agregado a mano). Precio unitario y Total arrancan
   // vacíos: el Total se completa solo apenas haya Cantidad y Precio
-  // unitario cargados (ver recalcularTotalPedido).
+  // unitario cargados (ver recalcularTodosLosTotalesPedido).
   function construirFilaDatosPedido(item) {
     return [item.rg, item.codigo, item.descripcion, item.cantidad, '', ''];
   }
@@ -1111,14 +1111,41 @@
   // fórmula de celda: se recalcula a mano con JS, leyendo siempre la fila
   // ACTUAL de Cantidad/Precio unitario, así que sobrevive sin problema a
   // que se reordenen o borren renglones.
-  function recalcularTotalPedido(ws, fila) {
-    const cantidad = parsePesos(ws.getValue('D' + fila));
-    const precioUnitario = parsePesos(ws.getValue('E' + fila, true));
-    if (cantidad === null || precioUnitario === null) return;
-    const total = cantidad * precioUnitario;
-    if (parsePesos(ws.getValue('F' + fila, true)) !== total) {
-      ws.setValue('F' + fila, total);
+  //
+  // Por qué por intervalo y no por evento: se probó dos veces enganchar
+  // el cálculo a los eventos propios de jspreadsheet ("onchange" /
+  // "onafterchanges" / "blur"), confirmando cada vez contra el bundle
+  // fuente en qué momento se disparaban, y en el navegador real seguía
+  // sin andar bien -- hay algo del orden exacto de esos eventos que no
+  // termina de calzar con lo que dice el código fuente (o la versión que
+  // sirve el CDN en este momento ya no es la misma que se analizó). En
+  // vez de seguir afinando a ciegas, se deja de depender por completo de
+  // CUÁNDO dispara jspreadsheet sus eventos: cada 400ms se recorren todas
+  // las filas y se escribe el Total si hace falta. No importa el orden
+  // de eventos, tarde o temprano el intervalo agarra el valor ya
+  // confirmado.
+  let totalesAutoPedido = {}; // fila -> último Total que escribió ESTA función (para no pisar una edición manual)
+  let intervaloTotalesPedido = null;
+
+  function recalcularTodosLosTotalesPedido() {
+    if (!worksheetPedido) return;
+    const cantidadFilas = worksheetPedido.getData().length;
+    for (let fila = 1; fila <= cantidadFilas; fila++) {
+      const cantidad = parsePesos(worksheetPedido.getValue('D' + fila));
+      const precioUnitario = parsePesos(worksheetPedido.getValue('E' + fila, true));
+      if (cantidad === null || precioUnitario === null) continue;
+      const totalCalculado = cantidad * precioUnitario;
+      const totalActual = parsePesos(worksheetPedido.getValue('F' + fila, true));
+      const editadoAMano = totalActual !== null
+        && totalesAutoPedido[fila] !== undefined
+        && Math.abs(totalActual - totalesAutoPedido[fila]) > 0.001;
+      if (editadoAMano) continue;
+      if (totalActual !== totalCalculado) {
+        worksheetPedido.setValue('F' + fila, totalCalculado);
+      }
+      totalesAutoPedido[fila] = totalCalculado;
     }
+    recalcularTotalGeneralPedido();
   }
 
   function recalcularTotalGeneralPedido() {
@@ -1134,18 +1161,11 @@
     });
   }
 
-  // Columnas 0-based: A=0 Renglón, B=1 Código, C=2 Descripción,
-  // D=3 Cantidad, E=4 Precio unitario, F=5 Total.
-  function manejarCambioCeldaPedido(ws, x, y) {
-    if (x === 3 || x === 4) {
-      recalcularTotalPedido(ws, y + 1);
-    }
-    recalcularTotalGeneralPedido();
-  }
-
   function crearGrillaPedido(items) {
     zonaTablaPedido.innerHTML = '';
     worksheetPedido = null;
+    totalesAutoPedido = {};
+    if (intervaloTotalesPedido) clearInterval(intervaloTotalesPedido);
 
     const envoltorio = document.createElement('div');
     envoltorio.className = 'grilla-comparacion-wrap';
@@ -1153,31 +1173,12 @@
 
     const datos = items.map(construirFilaDatosPedido);
 
-    // "onchange" llega como (worksheet, celdaDOM, x, y, valorNuevo,
-    // valorViejo) -- se dispara DENTRO del guardado real de la celda, así
-    // que para cuando llega acá, Cantidad/Precio unitario ya están
-    // actualizados en los datos de la grilla (confirmado leyendo
-    // updateCell() en el bundle fuente: primero graba el dato, recién
-    // después despacha "onchange"). Por eso es el único lugar donde
-    // calculamos el Total: leer en cualquier otro momento (por ejemplo en
-    // un "blur" de la grilla entera, que llega ANTES de que la celda se
-    // termine de confirmar) traía el valor viejo y escribía un Total
-    // mal calculado.
-    //
-    // "onafterchanges" llega como (worksheet, cambios), con `cambios` un
-    // array de {x,y,value,oldValue} -- se usa como respaldo, para los
-    // casos (pegar varias celdas, etc.) donde puede no haber un
-    // "onchange" por cada celda.
-    const manejarEventoGrillaPedido = (nombreEvento, instancia, segundoArgumento, x, y) => {
-      if (nombreEvento === 'onchange' && typeof x === 'number' && typeof y === 'number') {
-        manejarCambioCeldaPedido(instancia, x, y);
-      } else if (nombreEvento === 'onafterchanges') {
-        const cambios = Array.isArray(segundoArgumento) ? segundoArgumento : [];
-        cambios.forEach((cambio) => {
-          if (cambio && (cambio.x === 3 || cambio.x === 4)) {
-            manejarCambioCeldaPedido(instancia, cambio.x, cambio.y);
-          }
-        });
+    // El cálculo de Total ya no depende de estos eventos (ver el comentario
+    // en recalcularTodosLosTotalesPedido) -- acá solo se usan para
+    // refrescar el total general en pantalla apenas se nota un cambio,
+    // antes de que pase el intervalo.
+    const manejarEventoGrillaPedido = (nombreEvento) => {
+      if (nombreEvento === 'onchange' || nombreEvento === 'onafterchanges') {
         recalcularTotalGeneralPedido();
       }
     };
@@ -1207,6 +1208,8 @@
       ],
     });
     worksheetPedido = instancias[0];
+    intervaloTotalesPedido = setInterval(recalcularTodosLosTotalesPedido, 400);
+    recalcularTodosLosTotalesPedido();
 
     // Respaldo además del evento propio de jspreadsheet: refrescar el
     // total general en cualquier interacción con la grilla. Ojo: esto NO
@@ -1236,6 +1239,11 @@
   botonAgregarRenglon.addEventListener('click', () => {
     if (!worksheetPedido) return;
     worksheetPedido.insertRow(construirFilaDatosPedido({ rg: '', codigo: '', descripcion: '', cantidad: '' }));
+    // Se resetea el seguimiento de "qué filas ya se autocompletaron":
+    // después de agregar/borrar un renglón los números de fila de abajo
+    // se corren, y sin este reseteo el intervalo podría confundir una
+    // fila corrida con una "editada a mano" y dejar de autocompletarla.
+    totalesAutoPedido = {};
   });
 
   botonEliminarRenglon.addEventListener('click', () => {
@@ -1246,6 +1254,7 @@
     }
     if (!confirm('¿Eliminar el renglón seleccionado? (si no hay ninguno marcado, se borra el último)')) return;
     worksheetPedido.deleteRow();
+    totalesAutoPedido = {};
     recalcularTotalGeneralPedido();
   });
 

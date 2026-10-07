@@ -26,6 +26,7 @@ from zoneinfo import ZoneInfo
 import pdfplumber
 from num2words import num2words
 from reportlab.lib.utils import ImageReader
+from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.platypus import (
     BaseDocTemplate,
     Frame,
@@ -66,6 +67,27 @@ def _monto_en_palabras(valor: float) -> str:
     return f"SON PESOS: {num2words(entero, lang='es').upper()} PESOS CON {centavos:02d}/100.-"
 
 
+FUENTE_TABLA = "Helvetica"
+TAMANO_TABLA = 8
+PADDING_CELDA = 3  # mismo valor que LEFTPADDING/RIGHTPADDING del TableStyle
+
+
+def _celda_precio(valor, ancho_columna: float) -> str:
+    """Arma el texto de una celda de precio tal como lo hace el F.41
+    original: "$" seguido de puntos de relleno hasta el ancho real de la
+    columna (medido con la fuente real, no un conteo fijo de caracteres).
+    Si hay un valor cargado, se escribe arriba de esa misma línea de
+    puntos ("$ 1.234,56 ..........") en vez de en una celda aparte, para
+    que se vea como un formulario completado a mano, no un documento
+    distinto."""
+    ancho_disponible = ancho_columna - 2 * PADDING_CELDA
+    prefijo = "$" if valor in (None, "") else f"$ {_formatear_moneda(valor)} "
+    ancho_prefijo = stringWidth(prefijo, FUENTE_TABLA, TAMANO_TABLA)
+    ancho_punto = stringWidth(".", FUENTE_TABLA, TAMANO_TABLA)
+    cantidad_puntos = max(0, int((ancho_disponible - ancho_prefijo) / ancho_punto))
+    return prefijo + "." * cantidad_puntos
+
+
 def _analizar_pdf_original(pdf_path: Path) -> dict:
     """Lee el PDF que subió el usuario y saca todo lo necesario para
     poder reconstruirlo: tamaño de página, dónde termina el encabezado
@@ -90,6 +112,25 @@ def _analizar_pdf_original(pdf_path: Path) -> dict:
             default=ancho - LEFT_BORDER_X,
         )
 
+        # El original no tiene ninguna línea vertical interna (confirmado
+        # celda por celda): "Precio unitario"/"Total" son literalmente
+        # "$" + puntos de relleno como texto, no columnas con borde. Se
+        # detecta dónde arranca cada "$" en una fila de ítems real (no en
+        # el encabezado) para poder replicar el mismo ancho exacto.
+        x_precio_unitario = None
+        x_total = None
+        if len(bandas_p1) > 1:
+            top_fila, bottom_fila = bandas_p1[1]
+            dolares = sorted(
+                c["x0"] for c in p1.chars
+                if top_fila - 1 <= c["top"] <= bottom_fila + 1 and c["text"] == "$"
+            )
+            if len(dolares) >= 2:
+                x_precio_unitario, x_total = dolares[0], dolares[1]
+        if x_precio_unitario is None or x_total is None:
+            x_precio_unitario = COL_CANT_MAX + 2
+            x_total = COL_CANT_MAX + (borde_derecho - COL_CANT_MAX) / 2
+
         def _recortar(hasta_y: float) -> bytes:
             imagen = p1.crop((0, 0, ancho, hasta_y)).to_image(resolution=200)
             buffer = io.BytesIO()
@@ -111,24 +152,25 @@ def _analizar_pdf_original(pdf_path: Path) -> dict:
         "imagen_pagina1": imagen_pagina1,
         "imagen_mini": imagen_mini,
         "borde_derecho": borde_derecho,
+        "x_precio_unitario": x_precio_unitario,
+        "x_total": x_total,
         "pie_pagina": pie_pagina,
     }
 
 
-def _anchos_columnas(borde_derecho: float) -> list:
+def _anchos_columnas(info: dict) -> list:
     """Reusa los mismos límites de columna que ya usa la extracción
-    (f41_a_excel.py), para que la tabla nueva quede alineada en la misma
-    posición horizontal que la original. Precio unitario/Total se
-    reparten el resto del ancho de la tabla por la mitad."""
-    resto = borde_derecho - COL_CANT_MAX
-    mitad = resto / 2
+    (f41_a_excel.py) para Renglón/Código/Descripción, y las posiciones
+    reales de "$" detectadas en _analizar_pdf_original para Cantidad/
+    Precio unitario/Total, para que la tabla nueva quede alineada en la
+    misma posición horizontal que la original."""
     return [
         COL_RG_MAX - LEFT_BORDER_X,
         COL_CODIGO_MAX - COL_RG_MAX,
         COL_DESC_MAX - COL_CODIGO_MAX,
-        COL_CANT_MAX - COL_DESC_MAX,
-        mitad,
-        mitad,
+        info["x_precio_unitario"] - COL_DESC_MAX,
+        info["x_total"] - info["x_precio_unitario"],
+        info["borde_derecho"] - info["x_total"],
     ]
 
 
@@ -191,35 +233,51 @@ def generar_f41_editado(pdf_original_path: Path, filas: list, salida: Path):
     ])
 
     estilos = getSampleStyleSheet()
-    estilo_celda = ParagraphStyle("celda", parent=estilos["Normal"], fontName="Helvetica", fontSize=8, leading=9.5)
-    estilo_celda_bold = ParagraphStyle("celda_bold", parent=estilo_celda, fontName="Helvetica-Bold")
+    estilo_celda = ParagraphStyle("celda", parent=estilos["Normal"], fontName=FUENTE_TABLA, fontSize=TAMANO_TABLA, leading=9.5)
 
+    anchos_columnas = _anchos_columnas(info)
+    ancho_precio_unitario, ancho_total = anchos_columnas[4], anchos_columnas[5]
+
+    # El encabezado ("Rg Código Descripción Cant. P.Unit. Total") y las
+    # filas de datos van como texto plano, no Paragraph: en el original
+    # no hay wrap ni bordes internos, así que no hace falta ese motor de
+    # texto más que para Descripción (la única columna que sí necesita
+    # ajustar el texto a su ancho).
     encabezados = ["Rg", "Código", "Descripción", "Cant.", "P.Unit.", "Total"]
-    filas_tabla = [[Paragraph(h, estilo_celda_bold) for h in encabezados]]
+    filas_tabla = [encabezados]
     total_general = 0.0
     for fila in filas:
         total = fila.get("total")
         if total not in (None, ""):
             total_general += float(total)
         filas_tabla.append([
-            Paragraph(str(fila.get("rg")) if fila.get("rg") not in (None, "") else "", estilo_celda),
-            Paragraph(fila.get("codigo") or "", estilo_celda),
+            str(fila.get("rg")) if fila.get("rg") not in (None, "") else "",
+            fila.get("codigo") or "",
             Paragraph(fila.get("descripcion") or "", estilo_celda),
-            Paragraph(str(fila.get("cantidad")) if fila.get("cantidad") not in (None, "") else "", estilo_celda),
-            Paragraph(_formatear_moneda(fila.get("precio_unitario")), estilo_celda),
-            Paragraph(_formatear_moneda(total), estilo_celda),
+            str(fila.get("cantidad")) if fila.get("cantidad") not in (None, "") else "",
+            _celda_precio(fila.get("precio_unitario"), ancho_precio_unitario),
+            _celda_precio(total, ancho_total),
         ])
 
-    tabla = Table(filas_tabla, colWidths=_anchos_columnas(borde_derecho), repeatRows=1)
+    tabla = Table(filas_tabla, colWidths=anchos_columnas, repeatRows=1)
     tabla.setStyle(TableStyle([
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
+        # Sin líneas verticales internas a propósito: confirmado celda por
+        # celda en el PDF original que no tiene ninguna -- cada fila es
+        # una sola caja con borde izq/der y una línea abajo; las columnas
+        # existen solo porque el texto arranca siempre en la misma
+        # posición X. Replicar eso (en vez de una grilla tipo planilla)
+        # es lo que hace que se vea igual al original.
+        ("BOX", (0, 0), (-1, -1), 0.5, colors.black),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.5, colors.black),
+        ("FONTNAME", (0, 0), (-1, -1), FUENTE_TABLA),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), TAMANO_TABLA),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("ALIGN", (0, 0), (1, -1), "CENTER"),
-        ("ALIGN", (3, 0), (-1, -1), "CENTER"),
-        ("TOPPADDING", (0, 0), (-1, -1), 3),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-        ("LEFTPADDING", (0, 0), (-1, -1), 3),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+        ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+        ("TOPPADDING", (0, 0), (-1, -1), PADDING_CELDA),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), PADDING_CELDA),
+        ("LEFTPADDING", (0, 0), (-1, -1), PADDING_CELDA),
+        ("RIGHTPADDING", (0, 0), (-1, -1), PADDING_CELDA),
     ]))
 
     estilo_total = ParagraphStyle("total", parent=estilos["Normal"], fontName="Helvetica-Bold", fontSize=9)
