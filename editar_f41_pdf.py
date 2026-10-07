@@ -266,16 +266,17 @@ def generar_f41_editado(pdf_original_path: Path, filas: list, salida: Path):
 
     tabla = Table(filas_tabla, colWidths=anchos_columnas, repeatRows=1)
     tabla.setStyle(TableStyle([
-        # Sin líneas verticales internas, y sin línea entre renglones de
-        # datos, a propósito: confirmado renderizando una imagen de la
-        # tabla del PDF original (no solo mirando las coordenadas) que
-        # solo tiene el marco exterior y una línea debajo del encabezado
-        # de columnas -- los renglones de datos se separan nada más que
-        # por espacio en blanco.
+        # Ni líneas verticales internas, ni línea debajo del encabezado de
+        # columnas, ni negrita ahí -- confirmado letra por letra en el PDF
+        # original (no solo mirando las coordenadas): "Rg Código
+        # Descripción..." usa la misma fuente Helvetica común que las
+        # filas de datos, y en toda la zona de la tabla las únicas líneas
+        # horizontales son la de arriba de "DETALLE DE ITEMS" y la del
+        # final de la tabla -- ninguna entre el encabezado y el primer
+        # renglón, ni entre renglones. O sea: el encabezado de columnas es
+        # una fila más, sin ningún estilo especial salvo la alineación.
         ("BOX", (0, 0), (-1, -1), 0.5, colors.black),
-        ("LINEBELOW", (0, 0), (-1, 0), 0.5, colors.black),
         ("FONTNAME", (0, 0), (-1, -1), FUENTE_TABLA),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
         ("FONTSIZE", (0, 0), (-1, -1), TAMANO_TABLA),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("ALIGN", (0, 0), (-1, -1), "LEFT"),
@@ -284,10 +285,8 @@ def generar_f41_editado(pdf_original_path: Path, filas: list, salida: Path):
         # filas de datos, donde el "$...puntos" ya arranca siempre a la
         # izquierda -- se queda alineado a la izquierda.
         ("ALIGN", (4, 0), (5, 0), "RIGHT"),
-        ("TOPPADDING", (0, 0), (-1, 0), PADDING_CELDA),
-        ("BOTTOMPADDING", (0, 0), (-1, 0), PADDING_CELDA),
-        ("TOPPADDING", (0, 1), (-1, -1), PADDING_VERTICAL_FILA),
-        ("BOTTOMPADDING", (0, 1), (-1, -1), PADDING_VERTICAL_FILA),
+        ("TOPPADDING", (0, 0), (-1, -1), PADDING_VERTICAL_FILA),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), PADDING_VERTICAL_FILA),
         ("LEFTPADDING", (0, 0), (-1, -1), PADDING_CELDA),
         ("RIGHTPADDING", (0, 0), (-1, -1), PADDING_CELDA),
     ]))
