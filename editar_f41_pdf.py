@@ -72,6 +72,17 @@ TAMANO_TABLA = 8
 PADDING_CELDA = 3  # mismo valor que LEFTPADDING/RIGHTPADDING del TableStyle
 
 
+def _texto_con_puntos(prefijo: str, ancho_objetivo: float, fuente: str, tamano: float) -> str:
+    """`prefijo` + puntos de relleno hasta completar `ancho_objetivo`
+    (medido con la fuente real, no un conteo fijo de caracteres). Si
+    `prefijo` ya ocupa más que el ancho objetivo, se devuelve tal cual,
+    sin puntos de más."""
+    ancho_prefijo = stringWidth(prefijo, fuente, tamano)
+    ancho_punto = stringWidth(".", fuente, tamano)
+    cantidad_puntos = max(0, int((ancho_objetivo - ancho_prefijo) / ancho_punto))
+    return prefijo + "." * cantidad_puntos
+
+
 def _celda_precio(valor, ancho_columna: float) -> str:
     """Arma el texto de una celda de precio tal como lo hace el F.41
     original: "$" seguido de puntos de relleno hasta el ancho real de la
@@ -80,12 +91,41 @@ def _celda_precio(valor, ancho_columna: float) -> str:
     puntos ("$ 1.234,56 ..........") en vez de en una celda aparte, para
     que se vea como un formulario completado a mano, no un documento
     distinto."""
-    ancho_disponible = ancho_columna - 2 * PADDING_CELDA
     prefijo = "$" if valor in (None, "") else f"$ {_formatear_moneda(valor)} "
-    ancho_prefijo = stringWidth(prefijo, FUENTE_TABLA, TAMANO_TABLA)
-    ancho_punto = stringWidth(".", FUENTE_TABLA, TAMANO_TABLA)
-    cantidad_puntos = max(0, int((ancho_disponible - ancho_prefijo) / ancho_punto))
-    return prefijo + "." * cantidad_puntos
+    return _texto_con_puntos(prefijo, ancho_columna - 2 * PADDING_CELDA, FUENTE_TABLA, TAMANO_TABLA)
+
+
+def _medir_linea_visible(page, primera_palabra: str):
+    """Busca la primera palabra == `primera_palabra` y mide el ancho
+    visible de toda esa línea de texto (de la primera letra a la
+    última), SIN contar los espacios en blanco de relleno que usa el
+    PDF original para centrar el texto a mano (si se incluyeran, parecería
+    que el texto arranca pegado al margen izquierdo cuando en realidad
+    está centrado más a la derecha). Devuelve None si no la encuentra."""
+    objetivo = next((w for w in page.extract_words() if w["text"] == primera_palabra), None)
+    if not objetivo:
+        return None
+    chars_linea = [c for c in page.chars if abs(c["top"] - objetivo["top"]) < 1 and c["text"] != " "]
+    if not chars_linea:
+        return None
+    return max(c["x1"] for c in chars_linea) - min(c["x0"] for c in chars_linea)
+
+
+def _medir_linea_arriba_de(page, palabra_debajo: str, distancia_min=5, distancia_max=20):
+    """Mide el ancho visible de la línea de puntos que está arriba de la
+    palabra `palabra_debajo` (caso "FIRMA", con la línea para la firma
+    arriba del texto "FIRMA Y SELLO DEL PROPONENTE"). Devuelve None si no
+    la encuentra."""
+    objetivo = next((w for w in page.extract_words() if w["text"] == palabra_debajo), None)
+    if not objetivo:
+        return None
+    chars_arriba = [
+        c for c in page.chars
+        if distancia_min <= objetivo["top"] - c["top"] <= distancia_max and c["text"] not in (" ", "")
+    ]
+    if not chars_arriba:
+        return None
+    return max(c["x1"] for c in chars_arriba) - min(c["x0"] for c in chars_arriba)
 
 
 def _analizar_pdf_original(pdf_path: Path) -> dict:
@@ -144,6 +184,15 @@ def _analizar_pdf_original(pdf_path: Path) -> dict:
         coincidencia = re.search(r"(Usuario .+? P[aá]gina)\s*\d+", texto_p1)
         pie_pagina = coincidencia.group(1) if coincidencia else "Página"
 
+        # "SON PESOS"/"FIRMA Y SELLO" solo aparecen en la ÚLTIMA página del
+        # original (después de agotar los ítems), no en la página 1 -- en
+        # un PDF de una sola página son la misma página. Se mide el ancho
+        # visible real de esas líneas (sin los espacios de relleno que usa
+        # el original para centrarlas a mano) para poder centrar lo mismo.
+        p_ultima = pdf.pages[-1]
+        ancho_son_pesos = _medir_linea_visible(p_ultima, "SON")
+        ancho_firma = _medir_linea_arriba_de(p_ultima, "FIRMA")
+
     return {
         "ancho": ancho,
         "alto": alto,
@@ -154,6 +203,8 @@ def _analizar_pdf_original(pdf_path: Path) -> dict:
         "borde_derecho": borde_derecho,
         "x_precio_unitario": x_precio_unitario,
         "x_total": x_total,
+        "ancho_son_pesos": ancho_son_pesos or 260,
+        "ancho_firma": ancho_firma or 200,
         "pie_pagina": pie_pagina,
     }
 
@@ -259,9 +310,28 @@ def generar_f41_editado(pdf_original_path: Path, filas: list, salida: Path):
             _celda_precio(total, ancho_total),
         ])
 
+    # El "Total" general es, en el original, el último renglón de la
+    # propia tabla (confirmado: bandas_de_filas() lo detecta como una
+    # banda más, con el mismo borde que encierra toda la tabla), no un
+    # párrafo aparte debajo -- con una línea arriba separándolo del
+    # último ítem, el texto pegado al borde derecho (con el mismo
+    # relleno de puntos que las celdas de precio) y el resto del
+    # renglón en blanco.
+    fila_total_indice = len(filas_tabla)
+    texto_total = _texto_con_puntos(
+        f"Total: $ {_formatear_moneda(total_general)} ",
+        ancho_frame - 2 * PADDING_CELDA, "Helvetica-Bold", 8,
+    )
+    # El contenido va en la primera columna: con SPAN, reportlab arma la
+    # celda fusionada a partir del contenido de la celda de más arriba a
+    # la izquierda del rango (acá, columna 0) e ignora lo que haya en las
+    # demás columnas fusionadas -- si el texto se pone en la última
+    # columna, como en cualquier otra fila, no se ve.
+    filas_tabla.append([texto_total, "", "", "", "", ""])
+
     PADDING_VERTICAL_FILA = 7  # más generoso que PADDING_CELDA: en el original
     # los renglones de datos se separan solo por espacio en blanco, sin
-    # ninguna línea entre ellos, así que necesitan más aire para no
+    # ninguna línea entre ellas, así que necesitan más aire para no
     # verse amontonados.
 
     tabla = Table(filas_tabla, colWidths=anchos_columnas, repeatRows=1)
@@ -289,32 +359,41 @@ def generar_f41_editado(pdf_original_path: Path, filas: list, salida: Path):
         ("BOTTOMPADDING", (0, 0), (-1, -1), PADDING_VERTICAL_FILA),
         ("LEFTPADDING", (0, 0), (-1, -1), PADDING_CELDA),
         ("RIGHTPADDING", (0, 0), (-1, -1), PADDING_CELDA),
+        # El renglón de "Total" es el último de la tabla: todas las
+        # columnas se fusionan en una sola celda, con el texto pegado al
+        # borde derecho (relleno de puntos ya incluido en texto_total) y
+        # una línea arriba separándolo del último ítem -- igual que el
+        # original.
+        ("SPAN", (0, fila_total_indice), (-1, fila_total_indice)),
+        ("FONTNAME", (0, fila_total_indice), (-1, fila_total_indice), "Helvetica-Bold"),
+        ("FONTSIZE", (0, fila_total_indice), (-1, fila_total_indice), 8),
+        ("ALIGN", (0, fila_total_indice), (-1, fila_total_indice), "RIGHT"),
+        ("LINEABOVE", (0, fila_total_indice), (-1, fila_total_indice), 0.5, colors.black),
     ]))
 
-    # Estilos y alineación de este bloque, confirmados letra por letra en
-    # el PDF original (no asumidos): las tres líneas son Helvetica-Bold;
-    # "Total: $..." es de 8pt, arranca con relleno de puntos igual que
-    # las celdas de precio (mismo criterio que _celda_precio) y termina
-    # pegado al borde derecho de la tabla; "SON PESOS..." y "FIRMA Y
-    # SELLO DEL PROPONENTE" son de 9pt y arrancan pegadas al margen
-    # izquierdo (NO centradas, a pesar de las apariencias).
-    estilo_total = ParagraphStyle("total", parent=estilos["Normal"], fontName="Helvetica-Bold", fontSize=8)
-    estilo_son_pesos = ParagraphStyle("sonpesos", parent=estilos["Normal"], fontName="Helvetica-Bold", fontSize=9)
-    estilo_firma = ParagraphStyle("firma", parent=estilos["Normal"], fontName="Helvetica-Bold", fontSize=9)
+    # "SON PESOS..." y "FIRMA Y SELLO DEL PROPONENTE" van centradas (en
+    # el medio de la tabla), confirmado midiendo solo los caracteres
+    # VISIBLES de cada línea en el original -- a primera vista parecen
+    # arrancar pegadas al margen izquierdo, pero eso es porque el PDF
+    # original las centra "a mano" con un montón de espacios en blanco
+    # antes del texto, que si se cuentan como parte de la línea hacen
+    # parecer que arranca en el margen. El texto real (lo que escribe
+    # esta función) va arriba de la línea de puntos centrada, mismo
+    # criterio que ya se usa en las celdas de precio.
+    estilo_son_pesos = ParagraphStyle("sonpesos", parent=estilos["Normal"], fontName="Helvetica-Bold", fontSize=9, alignment=1)
+    estilo_firma_puntos = ParagraphStyle("firmapuntos", parent=estilos["Normal"], fontName="Helvetica-Bold", fontSize=9, alignment=1)
+    estilo_firma = ParagraphStyle("firma", parent=estilos["Normal"], fontName="Helvetica-Bold", fontSize=9, alignment=1)
 
-    prefijo_total = f"Total: $ {_formatear_moneda(total_general)} "
-    ancho_prefijo_total = stringWidth(prefijo_total, "Helvetica-Bold", 8)
-    ancho_punto_total = stringWidth(".", "Helvetica-Bold", 8)
-    puntos_total = max(0, int((ancho_frame - ancho_prefijo_total) / ancho_punto_total))
-    texto_total = prefijo_total + "." * puntos_total
+    texto_son_pesos = _texto_con_puntos(_monto_en_palabras(total_general) + " ", info["ancho_son_pesos"], "Helvetica-Bold", 9)
+    texto_firma_puntos = "." * max(1, int(info["ancho_firma"] / stringWidth(".", "Helvetica-Bold", 9)))
 
     story = [
         NextPageTemplate("continuacion"),
         tabla,
-        Spacer(1, 10),
-        Paragraph(texto_total, estilo_total),
-        Paragraph(_monto_en_palabras(total_general), estilo_son_pesos),
         Spacer(1, 24),
+        Paragraph(texto_son_pesos, estilo_son_pesos),
+        Spacer(1, 30),
+        Paragraph(texto_firma_puntos, estilo_firma_puntos),
         Paragraph("FIRMA Y SELLO DEL PROPONENTE", estilo_firma),
     ]
     doc.build(story)
