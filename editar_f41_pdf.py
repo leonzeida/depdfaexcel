@@ -24,7 +24,6 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pdfplumber
-from num2words import num2words
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.platypus import (
@@ -59,12 +58,6 @@ def _formatear_moneda(valor) -> str:
         return ""
     texto = f"{float(valor):,.2f}"
     return texto.replace(",", "_").replace(".", ",").replace("_", ".")
-
-
-def _monto_en_palabras(valor: float) -> str:
-    centavos_totales = round(float(valor) * 100)
-    entero, centavos = divmod(centavos_totales, 100)
-    return f"SON PESOS: {num2words(entero, lang='es').upper()} PESOS CON {centavos:02d}/100.-"
 
 
 FUENTE_TABLA = "Helvetica"
@@ -192,6 +185,13 @@ def _analizar_pdf_original(pdf_path: Path) -> dict:
         p_ultima = pdf.pages[-1]
         ancho_son_pesos = _medir_linea_visible(p_ultima, "SON")
         ancho_firma = _medir_linea_arriba_de(p_ultima, "FIRMA")
+        # Ancho visible de "Total: $..............": en el original NO
+        # ocupa toda la fila, arranca bastante más a la derecha (recién
+        # después de la mitad) y el relleno de puntos llega hasta el
+        # borde -- medir solo este tramo (no todo el ancho de la tabla)
+        # es lo que hace que, alineado a la derecha, el texto quede
+        # corrido hacia la derecha en vez de pegado al margen izquierdo.
+        ancho_total_linea = _medir_linea_visible(p_ultima, "Total:")
 
     return {
         "ancho": ancho,
@@ -205,6 +205,7 @@ def _analizar_pdf_original(pdf_path: Path) -> dict:
         "x_total": x_total,
         "ancho_son_pesos": ancho_son_pesos or 260,
         "ancho_firma": ancho_firma or 200,
+        "ancho_total_linea": ancho_total_linea or 265,
         "pie_pagina": pie_pagina,
     }
 
@@ -316,11 +317,16 @@ def generar_f41_editado(pdf_original_path: Path, filas: list, salida: Path):
     # párrafo aparte debajo -- con una línea arriba separándolo del
     # último ítem, el texto pegado al borde derecho (con el mismo
     # relleno de puntos que las celdas de precio) y el resto del
-    # renglón en blanco.
+    # renglón en blanco. El relleno se calcula con el ancho MEDIDO de la
+    # línea real (no con el ancho completo de la tabla): el original no
+    # arranca "Total:" pegado al margen izquierdo, arranca bastante más a
+    # la derecha -- como el párrafo queda alineado a la derecha, usar un
+    # ancho más angosto es lo que corre todo el bloque hacia la derecha
+    # en vez de ocupar toda la fila.
     fila_total_indice = len(filas_tabla)
     texto_total = _texto_con_puntos(
         f"Total: $ {_formatear_moneda(total_general)} ",
-        ancho_frame - 2 * PADDING_CELDA, "Helvetica-Bold", 8,
+        info["ancho_total_linea"], "Helvetica-Bold", 8,
     )
     # El contenido va en la primera columna: con SPAN, reportlab arma la
     # celda fusionada a partir del contenido de la celda de más arriba a
@@ -377,14 +383,15 @@ def generar_f41_editado(pdf_original_path: Path, filas: list, salida: Path):
     # arrancar pegadas al margen izquierdo, pero eso es porque el PDF
     # original las centra "a mano" con un montón de espacios en blanco
     # antes del texto, que si se cuentan como parte de la línea hacen
-    # parecer que arranca en el margen. El texto real (lo que escribe
-    # esta función) va arriba de la línea de puntos centrada, mismo
-    # criterio que ya se usa en las celdas de precio.
+    # parecer que arranca en el margen. A pedido del usuario, "SON
+    # PESOS" queda en blanco (con su línea de puntos, sin completar el
+    # monto en palabras) -- igual que "FIRMA Y SELLO", es una línea para
+    # completar a mano, no un dato que haya que resolver acá.
     estilo_son_pesos = ParagraphStyle("sonpesos", parent=estilos["Normal"], fontName="Helvetica-Bold", fontSize=9, alignment=1)
     estilo_firma_puntos = ParagraphStyle("firmapuntos", parent=estilos["Normal"], fontName="Helvetica-Bold", fontSize=9, alignment=1)
     estilo_firma = ParagraphStyle("firma", parent=estilos["Normal"], fontName="Helvetica-Bold", fontSize=9, alignment=1)
 
-    texto_son_pesos = _texto_con_puntos(_monto_en_palabras(total_general) + " ", info["ancho_son_pesos"], "Helvetica-Bold", 9)
+    texto_son_pesos = _texto_con_puntos("SON PESOS: ", info["ancho_son_pesos"], "Helvetica-Bold", 9)
     texto_firma_puntos = "." * max(1, int(info["ancho_firma"] / stringWidth(".", "Helvetica-Bold", 9)))
 
     story = [
