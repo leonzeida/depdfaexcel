@@ -291,16 +291,29 @@ def generar_f41_editado(pdf_original_path: Path, filas: list, salida: Path):
         ("RIGHTPADDING", (0, 0), (-1, -1), PADDING_CELDA),
     ]))
 
-    estilo_total = ParagraphStyle("total", parent=estilos["Normal"], fontName="Helvetica-Bold", fontSize=9)
-    estilo_normal_9 = ParagraphStyle("normal9", parent=estilos["Normal"], fontName="Helvetica", fontSize=9)
-    estilo_firma = ParagraphStyle("firma", parent=estilos["Normal"], fontName="Helvetica-Bold", fontSize=9, alignment=1)
+    # Estilos y alineación de este bloque, confirmados letra por letra en
+    # el PDF original (no asumidos): las tres líneas son Helvetica-Bold;
+    # "Total: $..." es de 8pt, arranca con relleno de puntos igual que
+    # las celdas de precio (mismo criterio que _celda_precio) y termina
+    # pegado al borde derecho de la tabla; "SON PESOS..." y "FIRMA Y
+    # SELLO DEL PROPONENTE" son de 9pt y arrancan pegadas al margen
+    # izquierdo (NO centradas, a pesar de las apariencias).
+    estilo_total = ParagraphStyle("total", parent=estilos["Normal"], fontName="Helvetica-Bold", fontSize=8)
+    estilo_son_pesos = ParagraphStyle("sonpesos", parent=estilos["Normal"], fontName="Helvetica-Bold", fontSize=9)
+    estilo_firma = ParagraphStyle("firma", parent=estilos["Normal"], fontName="Helvetica-Bold", fontSize=9)
+
+    prefijo_total = f"Total: $ {_formatear_moneda(total_general)} "
+    ancho_prefijo_total = stringWidth(prefijo_total, "Helvetica-Bold", 8)
+    ancho_punto_total = stringWidth(".", "Helvetica-Bold", 8)
+    puntos_total = max(0, int((ancho_frame - ancho_prefijo_total) / ancho_punto_total))
+    texto_total = prefijo_total + "." * puntos_total
 
     story = [
         NextPageTemplate("continuacion"),
         tabla,
         Spacer(1, 10),
-        Paragraph(f"Total: $ {_formatear_moneda(total_general)}", estilo_total),
-        Paragraph(_monto_en_palabras(total_general), estilo_normal_9),
+        Paragraph(texto_total, estilo_total),
+        Paragraph(_monto_en_palabras(total_general), estilo_son_pesos),
         Spacer(1, 24),
         Paragraph("FIRMA Y SELLO DEL PROPONENTE", estilo_firma),
     ]
