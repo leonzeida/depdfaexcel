@@ -1780,8 +1780,14 @@
       const numeroFila = indice + 1;
       const renglon = fila[0];
       const costo = parsePesos(worksheetPreadjudicacion.getValue('G' + numeroFila, true));
+      // P. Venta es una fórmula (=Costo*((%+100)/100)) que SIEMPRE tiene
+      // un valor, incluso "0" cuando Costo está vacío (jspreadsheet
+      // evalúa la fórmula igual) - por eso no sirve para decidir si la
+      // fila tiene algo cargado de verdad. El criterio tiene que ser si
+      // Costo tiene un valor real: sin Costo, P. Venta tampoco significa
+      // nada.
+      if (costo === null) return;
       const precioVenta = parsePesos(worksheetPreadjudicacion.getValue('I' + numeroFila, true));
-      if (costo === null && precioVenta === null) return;
       costos[renglon] = { costo: costo, precio_venta: precioVenta };
     });
     return costos;
@@ -1837,6 +1843,13 @@
         mostrarMensaje(mensajePreadjudicacion, cuerpo.error || 'Ocurrió un error al procesar el archivo.', 'error');
       } else {
         crearGrillaPreadjudicacion(cuerpo.titulo, cuerpo.items);
+        if (cuerpo.cotizacion_previa) {
+          mostrarMensaje(
+            mensajePreadjudicacion,
+            'Este expediente ya lo cotizaste en Comparar precios (' + cuerpo.cotizacion_previa.cantidad_items + ' ítem(s)) — mirá la pestaña Historial para ver el detalle completo.',
+            'exito'
+          );
+        }
       }
     } catch (err) {
       cargandoPreadjudicacion.style.display = 'none';

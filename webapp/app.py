@@ -405,7 +405,23 @@ def items_para_preadjudicacion():
         if not items:
             return jsonify(error="No se encontraron items en ese PDF."), 400
 
-    return jsonify(titulo=titulo_preadjudicacion(encabezado), items=items)
+    # Si este expediente ya se cotizó antes en el comparador (F.41), se
+    # avisa - pero sin bloquear la carga del acta si la base de historial
+    # falla por cualquier motivo.
+    cotizacion_previa = None
+    try:
+        previos = leer_historial_por_expediente(encabezado.get("expediente") or "")
+        ofertados = [it for it in previos if it.get("precio_ofertado") is not None]
+        if ofertados:
+            cotizacion_previa = {"cantidad_items": len(ofertados)}
+    except ErrorPreciosReferencia:
+        pass
+
+    return jsonify(
+        titulo=titulo_preadjudicacion(encabezado),
+        items=items,
+        cotizacion_previa=cotizacion_previa,
+    )
 
 
 @app.route("/exportar_preadjudicacion", methods=["POST"])
