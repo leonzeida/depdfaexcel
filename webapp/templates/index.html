@@ -27,6 +27,18 @@
     gap: 24px;
     width: 100%;
   }
+  .cerrar-sesion {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    font-size: 13px;
+    color: #8291ab;
+    text-decoration: none;
+    padding: 6px 10px;
+    border-radius: 8px;
+    transition: background 0.15s, color 0.15s;
+  }
+  .cerrar-sesion:hover { background: #f4f8ff; color: #4f7cff; }
   .marca {
     text-align: center;
   }
@@ -404,6 +416,7 @@
     .tarjeta { background: #1b2030; box-shadow: none; }
     h1, h2 { color: #eef2f7; }
     p.subtitulo { color: #9aa8c7; }
+    .cerrar-sesion:hover { background: #232a3d; color: #eef2f7; }
     .zona { border-color: #333d55; }
     .zona:hover, .zona.sobre { background: #232a3d; border-color: #4f7cff; }
     .zona .texto-principal { color: #eef2f7; }
@@ -440,6 +453,8 @@
 </head>
 <body>
 <div class="contenedor">
+
+  <a href="/logout" class="cerrar-sesion">Cerrar sesión</a>
 
   <header class="marca">
     <h1>Zeid Medical</h1>

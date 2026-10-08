@@ -7,14 +7,17 @@ f41_a_excel.py.
 """
 
 import base64
+import hmac
 import json
+import os
+import secrets
 import sys
 import tempfile
 import threading
 import webbrowser
 from pathlib import Path
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from f41_a_excel import (  # noqa: E402
@@ -52,6 +55,52 @@ from f43_preadjudicacion import (
 
 app = Flask(__name__)
 PUERTO = 5000
+
+# Si SECRET_KEY no está seteada en el entorno (ej. en Render), se genera
+# una al arrancar el proceso - las sesiones se resetean en cada reinicio
+# del servidor, pero eso es aceptable para este caso de uso (si hiciera
+# falta que no pase, hay que setear SECRET_KEY en el entorno).
+app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
+
+SITE_PASSWORD = os.environ.get("SITE_PASSWORD")
+if not SITE_PASSWORD:
+    print(
+        "[login] AVISO: no está configurada SITE_PASSWORD - el sitio queda "
+        "sin contraseña, cualquiera con el link puede entrar.",
+        file=sys.stderr,
+        flush=True,
+    )
+
+# Rutas que no requieren haber iniciado sesión.
+_RUTAS_PUBLICAS = {"/login", "/static"}
+
+
+@app.before_request
+def exigir_login():
+    if not SITE_PASSWORD:
+        return  # sin contraseña configurada, no se bloquea nada
+    if request.path in _RUTAS_PUBLICAS or request.path.startswith("/static/"):
+        return
+    if not session.get("autenticado"):
+        return redirect(url_for("login"))
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    error = None
+    if request.method == "POST":
+        intento = request.form.get("password", "")
+        if SITE_PASSWORD and hmac.compare_digest(intento, SITE_PASSWORD):
+            session["autenticado"] = True
+            return redirect(url_for("inicio"))
+        error = "Contraseña incorrecta."
+    return render_template("login.html", error=error)
+
+
+@app.route("/logout", methods=["GET"])
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
 
 
 @app.route("/", methods=["GET"])
