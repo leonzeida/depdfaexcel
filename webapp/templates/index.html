@@ -1056,6 +1056,20 @@
     });
     worksheetActual = instancias[0];
 
+    // Resalta los items "descartables" (código 4.01.008) para que no
+    // haga falta separarlos a mano del resto antes de cotizar. El 4to
+    // parámetro (force=true) hace falta porque varias de estas columnas
+    // son de solo lectura (mismo motivo ya documentado para el resaltado
+    // de Zeid Medical en Precios adjudicados).
+    items.forEach((item, indice) => {
+      if (!(item.codigo || '').startsWith('4.01.008')) return;
+      const fila = indice + 1;
+      ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R'].forEach(letra => {
+        worksheetActual.setStyle(letra + fila, 'background-color', '#cdebf7', true);
+        worksheetActual.setStyle(letra + fila, 'color', '#055160', true);
+      });
+    });
+
     // ws.setValue(...) dispara el mismo evento "onafterchanges" que un
     // cambio hecho por el usuario (confirmado leyendo el código fuente de
     // jspreadsheet: setValue termina llamando a dispatch("onafterchanges")

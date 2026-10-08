@@ -194,6 +194,9 @@ def escribir_notas_pedido(filas: list, encabezado: dict, salida: Path):
     centrado_wrap = Alignment(horizontal="center", wrap_text=True)
     centrado_medio = Alignment(horizontal="center", vertical="center")
     relleno_encabezado = PatternFill("solid", fgColor="D4EA6B")
+    # Resalta los items "descartables" (codigo 4.01.008) para que el
+    # padre ya no tenga que separarlos a mano del resto.
+    relleno_descartable = PatternFill("solid", fgColor="CDEBF7")
 
     ws.merge_cells("A1:E1")
     ws["A1"] = "Zeid Medical S.R.L"
@@ -260,6 +263,7 @@ def escribir_notas_pedido(filas: list, encabezado: dict, salida: Path):
     fila = 7
     primera_fila_datos = fila
     for item in filas:
+        es_descartable = (item.get("codigo") or "").startswith("4.01.008")
         c_reng = ws.cell(row=fila, column=1, value=item["rg"])
         c_reng.alignment = centrado
         ws.cell(row=fila, column=2, value=item["descripcion"])
@@ -269,6 +273,9 @@ def escribir_notas_pedido(filas: list, encabezado: dict, salida: Path):
         c_precio.number_format = FMT_MONEDA
         c_importe = ws.cell(row=fila, column=5, value=f"=C{fila}*D{fila}")
         c_importe.number_format = FMT_MONEDA
+        if es_descartable:
+            for c in range(1, 6):
+                ws.cell(row=fila, column=c).fill = relleno_descartable
         fila += 1
     ultima_fila_datos = fila - 1
 
@@ -337,6 +344,9 @@ def escribir_planilla_trabajo(filas: list, encabezado: dict, salida: Path):
     centrado = Alignment(horizontal="center")
     izquierda = Alignment(horizontal="left")
     relleno_encabezado = PatternFill("solid", fgColor="D4EA6B")
+    # Resalta los items "descartables" (codigo 4.01.008) para que el
+    # padre ya no tenga que separarlos a mano del resto.
+    relleno_descartable = PatternFill("solid", fgColor="CDEBF7")
 
     ws.merge_cells("A1:J1")
     ws["A1"] = linea_de_pedido(encabezado, incluir_titulo=False)
@@ -404,6 +414,9 @@ def escribir_planilla_trabajo(filas: list, encabezado: dict, salida: Path):
         c_pct = ws.cell(row=fila, column=10, value=f"=H{fila}/E{fila}-1")
         c_pct.alignment = centrado
         c_pct.number_format = "0%"
+        if (item.get("codigo") or "").startswith("4.01.008"):
+            for c in range(1, 11):
+                ws.cell(row=fila, column=c).fill = relleno_descartable
         fila += 1
     ultima_fila_datos = fila - 1
 
