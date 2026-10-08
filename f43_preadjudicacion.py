@@ -154,23 +154,6 @@ def _palabras_desc_de_linea(linea):
     return [w for w in linea if COL_CODIGO_MAX <= w["x0"] < COL_DESC_MAX and w["x1"] <= COL_DESC_MAX]
 
 
-def _recortar_nombre_de_rubro(desc_palabras):
-    """El nombre de "rubro" (categoria del insumo, ej. "ANTIVIRAL.",
-    "INSUMOS DE USO MEDICO Y DE LABORATORIO.") siempre aparece ANTES de
-    la descripcion real del item, y siempre termina en un punto - a
-    veces como sufijo de la ultima palabra ("ANTIVIRAL."), a veces como
-    token "." suelto (confirmado con datos reales: "AGUA . AGUA
-    DESTILADA X 500 ml."). La descripcion real arranca siempre
-    inmediatamente despues de ese primer punto. Si no aparece ningun
-    punto, no se recorta nada (mejor mostrar de mas que perder texto
-    real)."""
-    for i, w in enumerate(desc_palabras):
-        if w["text"].endswith("."):
-            resto = desc_palabras[i + 1:]
-            return resto if resto else desc_palabras
-    return desc_palabras
-
-
 def extraer_adjudicaciones(pdf_path: Path) -> list:
     """Lista de items adjudicados: {renglon, codigo, descripcion,
     cantidad, precio_unitario, proveedor}, en el mismo orden en que
@@ -185,11 +168,13 @@ def extraer_adjudicaciones(pdf_path: Path) -> list:
     palabra de la columna Renglon que sea un digito puro.
 
     Antes de cada renglon aparece tambien el nombre de "rubro" (categoria
-    del insumo) del PROXIMO item, que puede compartir linea con el
-    comienzo real de su descripcion (ver _recortar_nombre_de_rubro) - por
-    eso ese texto no se descarta: se junta en `buffer_pendiente` y se le
-    agrega al item cuando se encuentra su ancla de renglon, recortando
-    recien ahi la parte que es nombre de rubro."""
+    del insumo, ej. "ANTIVIRAL.", "INSUMOS DE USO MEDICO Y DE
+    LABORATORIO.") del PROXIMO item, que puede compartir linea con el
+    comienzo real de su descripcion - por eso ese texto no se descarta:
+    se junta en `buffer_pendiente` y se le agrega al item cuando se
+    encuentra su ancla de renglon. El rubro queda como prefijo de la
+    Descripcion final (mismo criterio que ya usa el F.41 para este tipo
+    de items, que tampoco lo separa)."""
     lineas = _agrupar_lineas(pdf_path)
 
     items = []
@@ -214,7 +199,6 @@ def extraer_adjudicaciones(pdf_path: Path) -> list:
         if item_actual is None:
             return
         desc_palabras = sorted(item_actual["_desc"], key=lambda w: (round(w["top"], 1), w["x0"]))
-        desc_palabras = _recortar_nombre_de_rubro(desc_palabras)
         descripcion = " ".join(w["text"] for w in desc_palabras).strip()
         if item_actual["_obs"]:
             descripcion = (descripcion + " (Obs.: " + " ".join(item_actual["_obs"]) + ")").strip()
