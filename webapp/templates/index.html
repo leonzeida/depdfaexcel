@@ -933,6 +933,33 @@
     }
   });
 
+  // Los 4 nombres de proveedores (encabezados de columna, renombrables
+  // con clic derecho → "Rename this column" gracias a allowRenameColumn)
+  // se recuerdan en localStorage para no tener que volver a escribirlos
+  // en cada licitación - es solo una comodidad del navegador, si falla
+  // (ej. navegación privada) la grilla sigue andando con los nombres por
+  // defecto.
+  const CLAVE_NOMBRES_PROVEEDORES = 'zeidNombresProveedores';
+
+  function leerNombresProveedoresGuardados() {
+    try {
+      const guardado = localStorage.getItem(CLAVE_NOMBRES_PROVEEDORES);
+      const nombres = guardado ? JSON.parse(guardado) : null;
+      if (Array.isArray(nombres) && nombres.length === 4) return nombres;
+    } catch (err) {
+      // Seguimos con los nombres por defecto.
+    }
+    return ['Proveedor 1', 'Proveedor 2', 'Proveedor 3', 'Proveedor 4'];
+  }
+
+  function guardarNombresProveedores(nombres) {
+    try {
+      localStorage.setItem(CLAVE_NOMBRES_PROVEEDORES, JSON.stringify(nombres));
+    } catch (err) {
+      // No pasa nada si no se puede guardar, simplemente no persiste.
+    }
+  }
+
   function crearGrillaComparacion(titulo, items) {
     zonaTablaComparar.innerHTML = '';
     itemsActuales = items;
@@ -951,10 +978,16 @@
     zonaTablaComparar.appendChild(envoltorio);
 
     const datos = items.map((item, indice) => construirFilaDatos(item, indice + 1));
+    const nombresProveedores = leerNombresProveedoresGuardados();
 
-    const manejarEventoGrilla = (nombreEvento, instancia) => {
+    const manejarEventoGrilla = (nombreEvento, instancia, ...resto) => {
       if (nombreEvento === 'onafterchanges' || nombreEvento === 'onchange' || nombreEvento === 'onchangeheader') {
         recalcularTodo(instancia);
+      }
+      // resto[0] = índice de columna cuando el evento es onchangeheader
+      // (columnas 8-11 = Proveedor 1-4, ver COLUMNAS_PROVEEDORES).
+      if (nombreEvento === 'onchangeheader' && resto[0] >= 8 && resto[0] <= 11) {
+        guardarNombresProveedores([8, 9, 10, 11].map(i => instancia.getHeader(i)));
       }
     };
 
@@ -963,6 +996,7 @@
       worksheets: [
         {
           data: datos,
+          allowRenameColumn: true,
           columnSorting: false,
           onevent: manejarEventoGrilla,
           // La grilla pasa a tener su propio scroll interno (como un
@@ -985,10 +1019,10 @@
             { type: 'text', title: 'Actualizado', width: 100, readOnly: true },
             { type: 'text', title: 'Mejor proveedor', width: 150, readOnly: true },
             Object.assign({ type: 'text', title: 'Precio de referencia', width: 140 }, MASCARA_PESOS),
-            Object.assign({ type: 'text', title: 'Proveedor 1', width: 120 }, MASCARA_PESOS),
-            Object.assign({ type: 'text', title: 'Proveedor 2', width: 120 }, MASCARA_PESOS),
-            Object.assign({ type: 'text', title: 'Proveedor 3', width: 120 }, MASCARA_PESOS),
-            Object.assign({ type: 'text', title: 'Proveedor 4', width: 120 }, MASCARA_PESOS),
+            Object.assign({ type: 'text', title: nombresProveedores[0], width: 120 }, MASCARA_PESOS),
+            Object.assign({ type: 'text', title: nombresProveedores[1], width: 120 }, MASCARA_PESOS),
+            Object.assign({ type: 'text', title: nombresProveedores[2], width: 120 }, MASCARA_PESOS),
+            Object.assign({ type: 'text', title: nombresProveedores[3], width: 120 }, MASCARA_PESOS),
             Object.assign({ type: 'text', title: 'Mejor precio nuevo', width: 140 }, MASCARA_PESOS),
             { type: 'text', title: 'Proveedor ganador', width: 150, readOnly: true },
             // decimal:',' (sin mask) para que el motor de fórmulas de
@@ -1041,7 +1075,7 @@
 
     const ayuda = document.createElement('p');
     ayuda.className = 'ayuda-formulas';
-    ayuda.textContent = 'Es una grilla como Excel: podés escribir fórmulas en cualquier celda. Precio final = Mejor precio nuevo + ese % de aumento. Ej.: dejá 0 para el mismo precio, poné 20 para sumarle un 20%. El Precio final aparece en verde si queda por debajo del Precio de referencia, y en rojo si queda igual o por arriba.';
+    ayuda.textContent = 'Es una grilla como Excel: podés escribir fórmulas en cualquier celda. Precio final = Mejor precio nuevo + ese % de aumento. Ej.: dejá 0 para el mismo precio, poné 20 para sumarle un 20%. El Precio final aparece en verde si queda por debajo del Precio de referencia, y en rojo si queda igual o por arriba. Clic derecho sobre "Proveedor 1/2/3/4" para ponerle el nombre real de cada proveedor (se recuerda para la próxima vez).';
     zonaTablaComparar.appendChild(ayuda);
 
     const botonDescargarExcel = document.createElement('button');
