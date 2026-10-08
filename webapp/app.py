@@ -32,6 +32,12 @@ from f41_a_excel import (  # noqa: E402
 )
 from db_referencia import ErrorPreciosReferencia, guardar_precios_referencia, leer_precios_referencia
 from editar_f41_pdf import generar_f41_editado
+from f43_preadjudicacion import (
+    escribir_preadjudicacion_excel,
+    extraer_encabezado_f43,
+    extraer_preadjudicacion_completa,
+    titulo_preadjudicacion,
+)
 
 app = Flask(__name__)
 PUERTO = 5000
@@ -286,6 +292,55 @@ def generar_f41_editado_ruta():
         datos = base64.b64encode(salida.read_bytes()).decode("ascii")
 
     return jsonify(archivos=[{"etiqueta": "F.41 editado", "nombre": salida.name, "datos": datos}])
+
+
+@app.route("/items_para_preadjudicacion", methods=["POST"])
+def items_para_preadjudicacion():
+    archivo = request.files.get("pdf")
+    if not archivo or archivo.filename == "":
+        return jsonify(error="Elegí un archivo PDF antes de continuar."), 400
+
+    if not archivo.filename.lower().endswith(".pdf"):
+        return jsonify(error="El archivo tiene que ser un PDF."), 400
+
+    with tempfile.TemporaryDirectory() as tmp:
+        pdf_path = Path(tmp) / archivo.filename
+        archivo.save(pdf_path)
+
+        try:
+            items = extraer_preadjudicacion_completa(pdf_path)
+            encabezado = extraer_encabezado_f43(pdf_path)
+        except Exception:
+            return jsonify(
+                error="No se pudo leer ese PDF. Revisá que sea un Acta de Preadjudicación F.43 válida."
+            ), 400
+
+        if not items:
+            return jsonify(error="No se encontraron items en ese PDF."), 400
+
+    return jsonify(titulo=titulo_preadjudicacion(encabezado), items=items)
+
+
+@app.route("/exportar_preadjudicacion", methods=["POST"])
+def exportar_preadjudicacion():
+    cuerpo = request.get_json(silent=True) or {}
+    titulo = (cuerpo.get("titulo") or "").strip()
+    filas = cuerpo.get("filas") or []
+
+    if not isinstance(filas, list) or not filas:
+        return jsonify(error="No hay datos en la grilla para exportar."), 400
+
+    with tempfile.TemporaryDirectory() as tmp:
+        salida = Path(tmp) / "Precios adjudicados.xlsx"
+        try:
+            escribir_preadjudicacion_excel(titulo, filas, salida)
+        except Exception as exc:
+            print(f"[exportar-preadjudicacion] Fallo generando el Excel: {exc}", file=sys.stderr, flush=True)
+            return jsonify(error="No se pudo generar el Excel de precios adjudicados."), 500
+
+        datos = base64.b64encode(salida.read_bytes()).decode("ascii")
+
+    return jsonify(archivos=[{"etiqueta": "Precios adjudicados", "nombre": salida.name, "datos": datos}])
 
 
 def abrir_navegador():

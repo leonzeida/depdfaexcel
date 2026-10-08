@@ -363,6 +363,7 @@
     <button type="button" class="boton-pestana activa" data-panel="panel-convertir">Convertir a Excel</button>
     <button type="button" class="boton-pestana" data-panel="panel-comparar">Comparar precios</button>
     <button type="button" class="boton-pestana" data-panel="panel-pedido">Editar F.41</button>
+    <button type="button" class="boton-pestana" data-panel="panel-preadjudicacion">Precios adjudicados</button>
   </nav>
 
   <div class="tarjeta" id="panel-convertir">
@@ -465,6 +466,36 @@
     </div>
 
     <div id="zona-tabla-pedido"></div>
+  </div>
+
+  <div class="tarjeta" id="panel-preadjudicacion" hidden>
+    <div class="ancho-angosto">
+      <h2>Precios adjudicados (Acta de Preadjudicación)</h2>
+      <p class="subtitulo">Subí un Acta de Preadjudicación (F.43) y completá el costo y el margen de cada ítem ganado.</p>
+
+      <div class="mensaje" id="mensaje-preadjudicacion"></div>
+
+      <form id="formulario-preadjudicacion" action="/items_para_preadjudicacion" method="post" enctype="multipart/form-data">
+        <label class="zona" id="zona-preadjudicacion" for="pdf-preadjudicacion">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#4f7cff" stroke-width="1.8">
+            <path d="M12 3v12m0-12 4 4m-4-4-4 4" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <div class="texto-principal">Hacé clic o arrastrá el PDF acá</div>
+          <div class="texto-secundario">Solo archivos .pdf</div>
+          <div class="nombre-archivo" id="nombre-pdf-preadjudicacion"></div>
+        </label>
+        <input type="file" id="pdf-preadjudicacion" name="pdf" accept="application/pdf,.pdf" required>
+      </form>
+      <div class="cargando" id="cargando-preadjudicacion">Cargando los ítems, un momento…</div>
+    </div>
+
+    <div class="fila-botones-comparar">
+      <button type="submit" form="formulario-preadjudicacion" id="boton-cargar-preadjudicacion">Cargar ítems</button>
+      <button type="button" id="boton-exportar-preadjudicacion" disabled>Exportar a Excel</button>
+    </div>
+
+    <div id="zona-tabla-preadjudicacion"></div>
   </div>
 
 </div>
@@ -1393,6 +1424,144 @@
     }
     botonCargarPedido.disabled = false;
     botonCargarPedido.textContent = 'Cargar ítems';
+  });
+
+  // --- Tarjeta 4: precios adjudicados (Acta de Preadjudicación / F.43) ---
+  const formularioPreadjudicacion = document.getElementById('formulario-preadjudicacion');
+  const botonCargarPreadjudicacion = document.getElementById('boton-cargar-preadjudicacion');
+  const botonExportarPreadjudicacion = document.getElementById('boton-exportar-preadjudicacion');
+  const cargandoPreadjudicacion = document.getElementById('cargando-preadjudicacion');
+  const mensajePreadjudicacion = document.getElementById('mensaje-preadjudicacion');
+  const zonaTablaPreadjudicacion = document.getElementById('zona-tabla-preadjudicacion');
+
+  configurarZonaCarga('zona-preadjudicacion', 'pdf-preadjudicacion', 'nombre-pdf-preadjudicacion');
+
+  let worksheetPreadjudicacion = null;
+  let tituloPreadjudicacionActual = '';
+
+  // Renglón, Descripción, Cantidad, Precio, Proveedor: tal cual vienen
+  // del PDF (de solo lectura). Costo y % los completa el padre a mano;
+  // P. Venta se autocalcula con la misma fórmula que "Precio final" en
+  // el comparador F.41, pero queda editable por si la quiere pisar.
+  function construirFilaPreadjudicacion(item, fila) {
+    return [
+      item.renglon,
+      item.descripcion || '',
+      item.cantidad === null || item.cantidad === undefined ? '' : item.cantidad,
+      item.precio_unitario === null || item.precio_unitario === undefined ? '' : item.precio_unitario,
+      item.proveedor || '',
+      '',
+      '',
+      '=F' + fila + '*((G' + fila + '+100)/100)',
+    ];
+  }
+
+  function crearGrillaPreadjudicacion(titulo, items) {
+    zonaTablaPreadjudicacion.innerHTML = '';
+    tituloPreadjudicacionActual = titulo;
+
+    const tituloEl = document.createElement('p');
+    tituloEl.className = 'titulo-comparacion';
+    tituloEl.textContent = titulo;
+    zonaTablaPreadjudicacion.appendChild(tituloEl);
+
+    const envoltorio = document.createElement('div');
+    envoltorio.className = 'grilla-comparacion-wrap';
+    zonaTablaPreadjudicacion.appendChild(envoltorio);
+
+    const datos = items.map((item, indice) => construirFilaPreadjudicacion(item, indice + 1));
+
+    const instancias = jspreadsheet(envoltorio, {
+      worksheets: [
+        {
+          data: datos,
+          columnSorting: false,
+          tableOverflow: true,
+          tableWidth: '100%',
+          tableHeight: '65vh',
+          columns: [
+            { type: 'numeric', title: 'Renglón', width: 70, readOnly: true },
+            { type: 'text', title: 'Descripción', width: 320, readOnly: true, align: 'left', wordWrap: true },
+            { type: 'numeric', title: 'Cantidad', width: 80, readOnly: true },
+            Object.assign({ type: 'text', title: 'Precio', width: 120, readOnly: true }, MASCARA_PESOS),
+            { type: 'text', title: 'Proveedor', width: 200, readOnly: true },
+            Object.assign({ type: 'text', title: 'Costo', width: 120 }, MASCARA_PESOS),
+            { type: 'text', title: '%', width: 70, decimal: ',' },
+            Object.assign({ type: 'text', title: 'P. Venta', width: 130 }, MASCARA_PESOS),
+          ],
+        },
+      ],
+    });
+    worksheetPreadjudicacion = instancias[0];
+
+    botonExportarPreadjudicacion.disabled = false;
+  }
+
+  async function exportarPreadjudicacion() {
+    if (!worksheetPreadjudicacion) return;
+    botonExportarPreadjudicacion.disabled = true;
+    botonExportarPreadjudicacion.textContent = 'Generando…';
+
+    try {
+      const filas = worksheetPreadjudicacion.getData();
+      const respuesta = await fetch('/exportar_preadjudicacion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ titulo: tituloPreadjudicacionActual, filas: filas }),
+      });
+      const cuerpo = await respuesta.json().catch(() => ({}));
+      if (!respuesta.ok) {
+        mostrarMensaje(mensajePreadjudicacion, cuerpo.error || 'No se pudo generar el Excel.', 'error');
+      } else {
+        const archivo = cuerpo.archivos[0];
+        const blob = base64AArchivo(
+          archivo.datos,
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        );
+        const url = URL.createObjectURL(blob);
+        const enlace = document.createElement('a');
+        enlace.href = url;
+        enlace.download = archivo.nombre;
+        document.body.appendChild(enlace);
+        enlace.click();
+        enlace.remove();
+        URL.revokeObjectURL(url);
+      }
+    } catch (err) {
+      mostrarMensaje(mensajePreadjudicacion, 'No se pudo conectar con la página. Volvé a intentar.', 'error');
+    }
+    botonExportarPreadjudicacion.disabled = false;
+    botonExportarPreadjudicacion.textContent = 'Exportar a Excel';
+  }
+  botonExportarPreadjudicacion.addEventListener('click', exportarPreadjudicacion);
+
+  formularioPreadjudicacion.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    ocultarMensaje(mensajePreadjudicacion);
+    zonaTablaPreadjudicacion.innerHTML = '';
+    worksheetPreadjudicacion = null;
+    botonExportarPreadjudicacion.disabled = true;
+    botonCargarPreadjudicacion.disabled = true;
+    botonCargarPreadjudicacion.textContent = 'Cargando…';
+    cargandoPreadjudicacion.style.display = 'block';
+
+    try {
+      const datos = new FormData(formularioPreadjudicacion);
+      const respuesta = await fetch('/items_para_preadjudicacion', { method: 'POST', body: datos });
+      const cuerpo = await respuesta.json().catch(() => ({}));
+      cargandoPreadjudicacion.style.display = 'none';
+
+      if (!respuesta.ok) {
+        mostrarMensaje(mensajePreadjudicacion, cuerpo.error || 'Ocurrió un error al procesar el archivo.', 'error');
+      } else {
+        crearGrillaPreadjudicacion(cuerpo.titulo, cuerpo.items);
+      }
+    } catch (err) {
+      cargandoPreadjudicacion.style.display = 'none';
+      mostrarMensaje(mensajePreadjudicacion, 'No se pudo conectar con la página. Volvé a intentar.', 'error');
+    }
+    botonCargarPreadjudicacion.disabled = false;
+    botonCargarPreadjudicacion.textContent = 'Cargar ítems';
   });
 </script>
 </body>
