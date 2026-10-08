@@ -30,7 +30,17 @@ from f41_a_excel import (  # noqa: E402
     linea_de_pedido,
     nombre_archivo_notas_pedido,
 )
-from db_referencia import ErrorPreciosReferencia, guardar_precios_referencia, leer_precios_referencia
+from db_referencia import (
+    ErrorPreciosReferencia,
+    escribir_historial_excel,
+    guardar_oferta_historial,
+    guardar_precios_referencia,
+    guardar_resultado_adjudicacion,
+    leer_historial_completo,
+    leer_historial_por_expediente,
+    leer_precios_referencia,
+    leer_resumen_proveedores,
+)
 from editar_f41_pdf import generar_f41_editado
 from f43_preadjudicacion import (
     es_zeid_medical,
@@ -149,6 +159,7 @@ def items_para_comparar():
         titulo=linea_de_pedido(encabezado, incluir_titulo=False),
         items=items,
         otros_items=otros_items,
+        encabezado=encabezado,
     )
 
 
@@ -156,6 +167,7 @@ def items_para_comparar():
 def guardar_referencia():
     cuerpo = request.get_json(silent=True) or {}
     items = cuerpo.get("items") or []
+    encabezado = cuerpo.get("encabezado") or {}
 
     items_validos = []
     for item in items:
@@ -178,6 +190,12 @@ def guardar_referencia():
 
         mejor_proveedor = (item.get("mejor_proveedor") or "").strip() or None
 
+        cantidad = item.get("cantidad")
+        try:
+            cantidad = float(cantidad) if cantidad is not None else None
+        except (TypeError, ValueError):
+            cantidad = None
+
         items_validos.append(
             {
                 "codigo": codigo,
@@ -185,6 +203,7 @@ def guardar_referencia():
                 "ultimo_precio": ultimo_precio,
                 "porcentaje": porcentaje,
                 "mejor_proveedor": mejor_proveedor,
+                "cantidad": cantidad,
             }
         )
 
@@ -193,6 +212,24 @@ def guardar_referencia():
 
     try:
         guardar_precios_referencia(items_validos)
+        # El historial de licitaciones es una ampliación aparte de
+        # precios_referencia (no la reemplaza): si falla no se corta el
+        # guardado principal, que es el que ya usaba el comparador.
+        try:
+            items_oferta = [
+                {
+                    "codigo": it["codigo"],
+                    "descripcion": it["descripcion"],
+                    "cantidad": it["cantidad"],
+                    "precio_ofertado": it["ultimo_precio"],
+                    "porcentaje_ofertado": it["porcentaje"],
+                    "proveedor_elegido": it["mejor_proveedor"],
+                }
+                for it in items_validos
+            ]
+            guardar_oferta_historial(items_oferta, encabezado)
+        except ErrorPreciosReferencia as exc:
+            print(f"[historial-licitaciones] Fallo guardando oferta: {exc}", file=sys.stderr, flush=True)
     except ErrorPreciosReferencia as exc:
         print(f"[precios-referencia] Fallo guardando: {exc}", file=sys.stderr, flush=True)
         return jsonify(
@@ -384,6 +421,127 @@ def generar_nota_pedido_preadjudicacion():
         datos = base64.b64encode(salida.read_bytes()).decode("ascii")
 
     return jsonify(archivos=[{"etiqueta": "Nota de Pedido", "nombre": salida.name, "datos": datos}])
+
+
+@app.route("/guardar_resultado_preadjudicacion", methods=["POST"])
+def guardar_resultado_preadjudicacion():
+    archivo = request.files.get("pdf")
+    if not archivo or archivo.filename == "":
+        return jsonify(error="Hace falta volver a adjuntar el PDF del acta para guardar el resultado."), 400
+
+    if not archivo.filename.lower().endswith(".pdf"):
+        return jsonify(error="El archivo tiene que ser un PDF."), 400
+
+    try:
+        costos = json.loads(request.form.get("costos", "") or "{}")
+    except (TypeError, ValueError):
+        costos = {}
+
+    with tempfile.TemporaryDirectory() as tmp:
+        pdf_path = Path(tmp) / archivo.filename
+        archivo.save(pdf_path)
+
+        try:
+            items = extraer_preadjudicacion_completa(pdf_path)
+            encabezado = extraer_encabezado_f43(pdf_path)
+        except Exception:
+            return jsonify(
+                error="No se pudo leer ese PDF. Revisá que sea un Acta de Preadjudicación F.43 válida."
+            ), 400
+
+    # Los renglones "DESIERTO" no tienen precio real, no aportan nada al
+    # historial.
+    items_adjudicados = [it for it in items if it["proveedor"] != "DESIERTO"]
+    if not items_adjudicados:
+        return jsonify(error="No hay renglones adjudicados en esta acta para guardar."), 400
+
+    def _num(valor):
+        try:
+            return float(valor) if valor not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+
+    items_resultado = []
+    for it in items_adjudicados:
+        datos_costo = costos.get(str(it["renglon"])) or {}
+        items_resultado.append(
+            {
+                "codigo": it["codigo"],
+                "descripcion": it["descripcion"],
+                "cantidad": it["cantidad"] if isinstance(it["cantidad"], (int, float)) else None,
+                "gano_zeid": es_zeid_medical(it["proveedor"]),
+                "precio_adjudicado": it["precio_unitario"],
+                "proveedor_ganador": it["proveedor"],
+                "costo_real": _num(datos_costo.get("costo")),
+                "precio_venta_real": _num(datos_costo.get("precio_venta")),
+            }
+        )
+
+    try:
+        guardar_resultado_adjudicacion(items_resultado, encabezado)
+    except ErrorPreciosReferencia as exc:
+        print(f"[historial-licitaciones] Fallo guardando resultado: {exc}", file=sys.stderr, flush=True)
+        return jsonify(
+            error="No se pudo guardar en la base de historial. Probá de nuevo en un momento."
+        ), 502
+
+    return jsonify(ok=True, cantidad=len(items_resultado))
+
+
+@app.route("/historial_resumen", methods=["GET"])
+def historial_resumen():
+    try:
+        resumen = leer_resumen_proveedores()
+    except ErrorPreciosReferencia as exc:
+        print(f"[historial-licitaciones] Fallo leyendo resumen: {exc}", file=sys.stderr, flush=True)
+        return jsonify(
+            error="No se pudo conectar con la base de historial. Probá de nuevo en un momento."
+        ), 502
+
+    return jsonify(resumen)
+
+
+@app.route("/historial_expediente", methods=["GET"])
+def historial_expediente():
+    expediente = (request.args.get("expediente") or "").strip()
+    if not expediente:
+        return jsonify(error="Escribí un número de expediente para buscar."), 400
+
+    try:
+        items = leer_historial_por_expediente(expediente)
+    except ErrorPreciosReferencia as exc:
+        print(f"[historial-licitaciones] Fallo leyendo expediente: {exc}", file=sys.stderr, flush=True)
+        return jsonify(
+            error="No se pudo conectar con la base de historial. Probá de nuevo en un momento."
+        ), 502
+
+    return jsonify(items=items)
+
+
+@app.route("/exportar_historial", methods=["GET"])
+def exportar_historial():
+    try:
+        filas = leer_historial_completo()
+    except ErrorPreciosReferencia as exc:
+        print(f"[historial-licitaciones] Fallo leyendo historial completo: {exc}", file=sys.stderr, flush=True)
+        return jsonify(
+            error="No se pudo conectar con la base de historial. Probá de nuevo en un momento."
+        ), 502
+
+    if not filas:
+        return jsonify(error="Todavía no hay nada guardado en el historial para exportar."), 400
+
+    with tempfile.TemporaryDirectory() as tmp:
+        salida = Path(tmp) / "Historial de licitaciones.xlsx"
+        try:
+            escribir_historial_excel(filas, salida)
+        except Exception as exc:
+            print(f"[historial-licitaciones] Fallo generando el Excel: {exc}", file=sys.stderr, flush=True)
+            return jsonify(error="No se pudo generar el Excel del historial."), 500
+
+        datos = base64.b64encode(salida.read_bytes()).decode("ascii")
+
+    return jsonify(archivos=[{"etiqueta": "Historial", "nombre": salida.name, "datos": datos}])
 
 
 def abrir_navegador():

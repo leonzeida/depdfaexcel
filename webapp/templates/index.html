@@ -321,6 +321,84 @@
   .boton-descarga-discreta:hover { background: #f4f8ff; border-color: #4f7cff; color: #4f7cff; }
   .boton-descarga-discreta:disabled { background: transparent; color: #b7c3dd; border-color: #dbe1e8; cursor: not-allowed; }
 
+  .resumen-historial {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    justify-content: center;
+    margin: 0 0 24px;
+  }
+  .resumen-historial .tarjeta-stat {
+    background: #f4f8ff;
+    border-radius: 12px;
+    padding: 16px 24px;
+    text-align: center;
+    min-width: 160px;
+  }
+  .resumen-historial .tarjeta-stat .valor {
+    font-size: 24px;
+    font-weight: 700;
+    color: #1a2b4c;
+  }
+  .resumen-historial .tarjeta-stat .etiqueta {
+    font-size: 13px;
+    color: #5a6b8c;
+    margin-top: 4px;
+  }
+  .tabla-historial {
+    width: 100%;
+    max-width: 640px;
+    margin: 0 auto;
+    border-collapse: collapse;
+    border: 1px solid #dbe1e8;
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .tabla-historial th, .tabla-historial td {
+    padding: 10px 14px;
+    text-align: center;
+    border-bottom: 1px solid #eef2f7;
+  }
+  .tabla-historial th {
+    background: #f4f8ff;
+    color: #1a2b4c;
+    font-size: 13px;
+  }
+  .tabla-historial td { color: #1a2b4c; font-size: 14px; }
+  .tabla-historial td:first-child, .tabla-historial th:first-child { text-align: left; }
+  .tabla-historial tr:last-child td { border-bottom: none; }
+  .vacio-historial {
+    text-align: center;
+    color: #8291ab;
+    font-size: 15px;
+    max-width: 440px;
+    margin: 0 auto;
+    padding: 20px;
+  }
+  .buscador-expediente {
+    margin-top: 32px;
+    padding-top: 24px;
+    border-top: 1px solid #eef2f7;
+  }
+  .campo-busqueda-expediente {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .campo-busqueda-expediente input {
+    flex: 1;
+    padding: 12px 14px;
+    border: 2px solid #b7c3dd;
+    border-radius: 10px;
+    font-size: 15px;
+  }
+  .campo-busqueda-expediente input:focus { outline: none; border-color: #4f7cff; }
+  .campo-busqueda-expediente button {
+    width: auto;
+    margin-top: 0;
+    padding: 0 20px;
+  }
+
   @media (prefers-color-scheme: dark) {
     body { background: #10131a; color: #eef2f7; }
     .tarjeta { background: #1b2030; box-shadow: none; }
@@ -348,6 +426,15 @@
     .boton-descarga-discreta { color: #9aa8c7; border-color: #333d55; }
     .boton-descarga-discreta:hover { background: #232a3d; border-color: #4f7cff; color: #eef2f7; }
     .boton-descarga-discreta:disabled { color: #4a5570; border-color: #262c3d; }
+    .resumen-historial .tarjeta-stat { background: #232a3d; }
+    .resumen-historial .tarjeta-stat .valor { color: #eef2f7; }
+    .resumen-historial .tarjeta-stat .etiqueta { color: #9aa8c7; }
+    .tabla-historial { border-color: #333d55; }
+    .tabla-historial th { background: #232a3d; color: #eef2f7; }
+    .tabla-historial td { color: #eef2f7; border-bottom-color: #262c3d; }
+    .vacio-historial { color: #9aa8c7; }
+    .buscador-expediente { border-top-color: #262c3d; }
+    .campo-busqueda-expediente input { background: #1b2030; border-color: #333d55; color: #eef2f7; }
   }
 </style>
 </head>
@@ -364,6 +451,7 @@
     <button type="button" class="boton-pestana" data-panel="panel-comparar">Comparar precios</button>
     <button type="button" class="boton-pestana" data-panel="panel-pedido">Editar F.41</button>
     <button type="button" class="boton-pestana" data-panel="panel-preadjudicacion">Precios adjudicados</button>
+    <button type="button" class="boton-pestana" data-panel="panel-historial">Historial</button>
   </nav>
 
   <div class="tarjeta" id="panel-convertir">
@@ -494,9 +582,38 @@
       <button type="submit" form="formulario-preadjudicacion" id="boton-cargar-preadjudicacion">Cargar ítems</button>
       <button type="button" id="boton-exportar-preadjudicacion" disabled>Exportar a Excel</button>
       <button type="button" id="boton-nota-pedido-preadjudicacion" disabled>Descargar Nota de Pedido</button>
+      <button type="button" id="boton-guardar-resultado-preadjudicacion" disabled>Guardar resultados</button>
     </div>
 
     <div id="zona-tabla-preadjudicacion"></div>
+  </div>
+
+  <div class="tarjeta" id="panel-historial" hidden>
+    <div class="ancho-angosto">
+      <h2>Historial de licitaciones</h2>
+      <p class="subtitulo">Resumen de qué tan seguido gana cada proveedor propio de Zeid, armado con lo que se va guardando desde "Comparar precios" y "Precios adjudicados".</p>
+
+      <div class="mensaje" id="mensaje-historial"></div>
+      <div class="cargando" id="cargando-historial">Cargando el historial, un momento…</div>
+    </div>
+
+    <div class="fila-botones-comparar">
+      <button type="button" id="boton-exportar-historial">Exportar historial a Excel</button>
+    </div>
+
+    <div id="zona-historial"></div>
+
+    <div class="ancho-angosto buscador-expediente">
+      <h2>Buscar una licitación puntual</h2>
+      <p class="subtitulo">Mirá el detalle completo (cotizado, adjudicado, costo real) de un expediente específico.</p>
+      <div class="campo-busqueda-expediente">
+        <input type="text" id="input-expediente-historial" placeholder="Ej: U-050996/26" autocomplete="off">
+        <button type="button" id="boton-buscar-expediente">Buscar</button>
+      </div>
+      <div class="mensaje" id="mensaje-expediente-historial"></div>
+    </div>
+
+    <div id="zona-historial-expediente"></div>
   </div>
 
 </div>
@@ -670,6 +787,7 @@
   let itemsActuales = [];
   let otrosItemsActuales = [];
   let tituloActual = '';
+  let encabezadoComparadorActual = {};
   // Apunta al recálculo (proveedor ganador + colores) de la grilla vigente;
   // crearGrillaComparacion lo reasigna cada vez que arma una grilla nueva.
   // Hace falta porque "Agregar ítem" vive fuera de esa función.
@@ -1065,6 +1183,7 @@
     return {
       codigo: item.codigo,
       descripcion: item.descripcion,
+      cantidad: item.cantidad,
       ultimo_precio: precioFinal,
       porcentaje: porcentaje,
       mejor_proveedor: mejorProveedor,
@@ -1089,7 +1208,7 @@
       const respuesta = await fetch('/guardar_referencia', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: itemsAGuardar }),
+        body: JSON.stringify({ items: itemsAGuardar, encabezado: encabezadoComparadorActual }),
       });
       const cuerpo = await respuesta.json().catch(() => ({}));
       if (!respuesta.ok) {
@@ -1129,6 +1248,7 @@
         mostrarMensaje(mensajeComparar, cuerpo.error || 'Ocurrió un error al procesar el archivo.', 'error');
       } else {
         otrosItemsActuales = cuerpo.otros_items || [];
+        encabezadoComparadorActual = cuerpo.encabezado || {};
         crearGrillaComparacion(cuerpo.titulo, cuerpo.items);
       }
     } catch (err) {
@@ -1432,6 +1552,7 @@
   const botonCargarPreadjudicacion = document.getElementById('boton-cargar-preadjudicacion');
   const botonExportarPreadjudicacion = document.getElementById('boton-exportar-preadjudicacion');
   const botonNotaPedidoPreadjudicacion = document.getElementById('boton-nota-pedido-preadjudicacion');
+  const botonGuardarResultadoPreadjudicacion = document.getElementById('boton-guardar-resultado-preadjudicacion');
   const cargandoPreadjudicacion = document.getElementById('cargando-preadjudicacion');
   const mensajePreadjudicacion = document.getElementById('mensaje-preadjudicacion');
   const zonaTablaPreadjudicacion = document.getElementById('zona-tabla-preadjudicacion');
@@ -1518,6 +1639,7 @@
 
     botonExportarPreadjudicacion.disabled = false;
     botonNotaPedidoPreadjudicacion.disabled = false;
+    botonGuardarResultadoPreadjudicacion.disabled = false;
   }
 
   async function exportarPreadjudicacion() {
@@ -1598,6 +1720,52 @@
   }
   botonNotaPedidoPreadjudicacion.addEventListener('click', descargarNotaPedidoPreadjudicacion);
 
+  // Junta, por renglón, lo que haya cargado a mano en Costo/P. Venta
+  // (solo tiene valores reales en las filas de Zeid Medical, que son las
+  // únicas editables) para mandarlo junto con el PDF al guardar.
+  function leerCostosPreadjudicacion() {
+    if (!worksheetPreadjudicacion) return {};
+    const datos = worksheetPreadjudicacion.getData();
+    const costos = {};
+    datos.forEach((fila, indice) => {
+      const numeroFila = indice + 1;
+      const renglon = fila[0];
+      const costo = parsePesos(worksheetPreadjudicacion.getValue('G' + numeroFila, true));
+      const precioVenta = parsePesos(worksheetPreadjudicacion.getValue('I' + numeroFila, true));
+      if (costo === null && precioVenta === null) return;
+      costos[renglon] = { costo: costo, precio_venta: precioVenta };
+    });
+    return costos;
+  }
+
+  // Igual que la Nota de Pedido, vuelve a mandar el mismo PDF para que
+  // el servidor arme el resultado real de cada renglón (ganó o no, a qué
+  // precio) y lo guarde en la base, junto con el Costo/P. Venta que haya
+  // cargado a mano para las filas de Zeid Medical.
+  async function guardarResultadoPreadjudicacion() {
+    if (!pdfPreadjudicacion.files[0]) return;
+    botonGuardarResultadoPreadjudicacion.disabled = true;
+    botonGuardarResultadoPreadjudicacion.textContent = 'Guardando…';
+
+    try {
+      const datosFormulario = new FormData();
+      datosFormulario.append('pdf', pdfPreadjudicacion.files[0]);
+      datosFormulario.append('costos', JSON.stringify(leerCostosPreadjudicacion()));
+      const respuesta = await fetch('/guardar_resultado_preadjudicacion', { method: 'POST', body: datosFormulario });
+      const cuerpo = await respuesta.json().catch(() => ({}));
+      if (!respuesta.ok) {
+        mostrarMensaje(mensajePreadjudicacion, cuerpo.error || 'No se pudo guardar el resultado.', 'error');
+      } else {
+        mostrarMensaje(mensajePreadjudicacion, '✅ Se guardaron ' + cuerpo.cantidad + ' renglón(es) en el historial.', 'exito');
+      }
+    } catch (err) {
+      mostrarMensaje(mensajePreadjudicacion, 'No se pudo conectar con la página. Volvé a intentar.', 'error');
+    }
+    botonGuardarResultadoPreadjudicacion.disabled = false;
+    botonGuardarResultadoPreadjudicacion.textContent = 'Guardar resultados';
+  }
+  botonGuardarResultadoPreadjudicacion.addEventListener('click', guardarResultadoPreadjudicacion);
+
   formularioPreadjudicacion.addEventListener('submit', async (e) => {
     e.preventDefault();
     ocultarMensaje(mensajePreadjudicacion);
@@ -1605,6 +1773,7 @@
     worksheetPreadjudicacion = null;
     botonExportarPreadjudicacion.disabled = true;
     botonNotaPedidoPreadjudicacion.disabled = true;
+    botonGuardarResultadoPreadjudicacion.disabled = true;
     botonCargarPreadjudicacion.disabled = true;
     botonCargarPreadjudicacion.textContent = 'Cargando…';
     cargandoPreadjudicacion.style.display = 'block';
@@ -1626,6 +1795,211 @@
     }
     botonCargarPreadjudicacion.disabled = false;
     botonCargarPreadjudicacion.textContent = 'Cargar ítems';
+  });
+
+  // --- Tarjeta 5: historial de licitaciones (resumen de proveedores) ---
+  const mensajeHistorial = document.getElementById('mensaje-historial');
+  const cargandoHistorial = document.getElementById('cargando-historial');
+  const zonaHistorial = document.getElementById('zona-historial');
+  const botonPestanaHistorial = document.querySelector('.boton-pestana[data-panel="panel-historial"]');
+  const botonExportarHistorial = document.getElementById('boton-exportar-historial');
+  const inputExpedienteHistorial = document.getElementById('input-expediente-historial');
+  const botonBuscarExpediente = document.getElementById('boton-buscar-expediente');
+  const mensajeExpedienteHistorial = document.getElementById('mensaje-expediente-historial');
+  const zonaHistorialExpediente = document.getElementById('zona-historial-expediente');
+
+  function formatearPesos(valor) {
+    return '$ ' + valor.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function renderizarHistorial(resumen) {
+    zonaHistorial.innerHTML = '';
+    const proveedores = resumen.proveedores || [];
+    const totales = resumen.totales || {};
+
+    if (!proveedores.length && !totales.licitaciones_ganadas) {
+      const vacio = document.createElement('p');
+      vacio.className = 'vacio-historial';
+      vacio.textContent = 'Todavía no hay licitaciones guardadas. Usá "Guardar precios de referencia" en Comparar precios y "Guardar resultados" en Precios adjudicados para ir sumando datos acá.';
+      zonaHistorial.appendChild(vacio);
+      return;
+    }
+
+    const resumenEl = document.createElement('div');
+    resumenEl.className = 'resumen-historial';
+    const stats = [
+      { valor: totales.licitaciones_ganadas || 0, etiqueta: 'Licitaciones ganadas (trackeadas)' },
+      { valor: formatearPesos(totales.costo_total || 0), etiqueta: 'Costo real acumulado' },
+      { valor: formatearPesos(totales.venta_total || 0), etiqueta: 'Venta real acumulada' },
+      { valor: formatearPesos(totales.margen_total || 0), etiqueta: 'Margen real acumulado' },
+    ];
+    stats.forEach(stat => {
+      const tarjetaStat = document.createElement('div');
+      tarjetaStat.className = 'tarjeta-stat';
+      const valorEl = document.createElement('div');
+      valorEl.className = 'valor';
+      valorEl.textContent = stat.valor;
+      const etiquetaEl = document.createElement('div');
+      etiquetaEl.className = 'etiqueta';
+      etiquetaEl.textContent = stat.etiqueta;
+      tarjetaStat.appendChild(valorEl);
+      tarjetaStat.appendChild(etiquetaEl);
+      resumenEl.appendChild(tarjetaStat);
+    });
+    zonaHistorial.appendChild(resumenEl);
+
+    if (!proveedores.length) return;
+
+    const tabla = document.createElement('table');
+    tabla.className = 'tabla-historial';
+    const encabezado = document.createElement('tr');
+    ['Proveedor', 'Veces elegido', 'Veces ganadas', '% de éxito'].forEach(titulo => {
+      const th = document.createElement('th');
+      th.textContent = titulo;
+      encabezado.appendChild(th);
+    });
+    tabla.appendChild(encabezado);
+    proveedores.forEach(p => {
+      const fila = document.createElement('tr');
+      [p.proveedor, p.veces_elegido, p.veces_ganadas, p.porcentaje_exito + '%'].forEach(valor => {
+        const td = document.createElement('td');
+        td.textContent = valor;
+        fila.appendChild(td);
+      });
+      tabla.appendChild(fila);
+    });
+    zonaHistorial.appendChild(tabla);
+  }
+
+  async function cargarHistorial() {
+    ocultarMensaje(mensajeHistorial);
+    zonaHistorial.innerHTML = '';
+    cargandoHistorial.style.display = 'block';
+    try {
+      const respuesta = await fetch('/historial_resumen');
+      const cuerpo = await respuesta.json().catch(() => ({}));
+      cargandoHistorial.style.display = 'none';
+      if (!respuesta.ok) {
+        mostrarMensaje(mensajeHistorial, cuerpo.error || 'No se pudo cargar el historial.', 'error');
+      } else {
+        renderizarHistorial(cuerpo);
+      }
+    } catch (err) {
+      cargandoHistorial.style.display = 'none';
+      mostrarMensaje(mensajeHistorial, 'No se pudo conectar con la página. Volvé a intentar.', 'error');
+    }
+  }
+
+  if (botonPestanaHistorial) {
+    botonPestanaHistorial.addEventListener('click', cargarHistorial);
+  }
+
+  async function exportarHistorial() {
+    botonExportarHistorial.disabled = true;
+    botonExportarHistorial.textContent = 'Generando…';
+    try {
+      const respuesta = await fetch('/exportar_historial');
+      const cuerpo = await respuesta.json().catch(() => ({}));
+      if (!respuesta.ok) {
+        mostrarMensaje(mensajeHistorial, cuerpo.error || 'No se pudo exportar el historial.', 'error');
+      } else {
+        const archivo = cuerpo.archivos[0];
+        const blob = base64AArchivo(
+          archivo.datos,
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        );
+        const url = URL.createObjectURL(blob);
+        const enlace = document.createElement('a');
+        enlace.href = url;
+        enlace.download = archivo.nombre;
+        document.body.appendChild(enlace);
+        enlace.click();
+        enlace.remove();
+        URL.revokeObjectURL(url);
+      }
+    } catch (err) {
+      mostrarMensaje(mensajeHistorial, 'No se pudo conectar con la página. Volvé a intentar.', 'error');
+    }
+    botonExportarHistorial.disabled = false;
+    botonExportarHistorial.textContent = 'Exportar historial a Excel';
+  }
+  botonExportarHistorial.addEventListener('click', exportarHistorial);
+
+  function renderizarHistorialExpediente(items) {
+    zonaHistorialExpediente.innerHTML = '';
+    if (!items.length) {
+      const vacio = document.createElement('p');
+      vacio.className = 'vacio-historial';
+      vacio.textContent = 'No hay nada guardado todavía para ese expediente.';
+      zonaHistorialExpediente.appendChild(vacio);
+      return;
+    }
+
+    const tabla = document.createElement('table');
+    tabla.className = 'tabla-historial';
+    const encabezado = document.createElement('tr');
+    [
+      'Código', 'Descripción', 'Cantidad', 'Precio ofertado', 'Proveedor elegido',
+      '¿Ganó Zeid?', 'Precio adjudicado', 'Proveedor ganador', 'Costo real', 'P. Venta real',
+    ].forEach(titulo => {
+      const th = document.createElement('th');
+      th.textContent = titulo;
+      encabezado.appendChild(th);
+    });
+    tabla.appendChild(encabezado);
+
+    items.forEach(it => {
+      const fila = document.createElement('tr');
+      const valores = [
+        it.codigo || '',
+        it.descripcion || '',
+        it.cantidad ?? '',
+        it.precio_ofertado !== null && it.precio_ofertado !== undefined ? formatearPesos(it.precio_ofertado) : '',
+        it.proveedor_elegido || '',
+        it.gano_zeid === true ? 'Sí' : it.gano_zeid === false ? 'No' : '',
+        it.precio_adjudicado !== null && it.precio_adjudicado !== undefined ? formatearPesos(it.precio_adjudicado) : '',
+        it.proveedor_ganador || '',
+        it.costo_real !== null && it.costo_real !== undefined ? formatearPesos(it.costo_real) : '',
+        it.precio_venta_real !== null && it.precio_venta_real !== undefined ? formatearPesos(it.precio_venta_real) : '',
+      ];
+      valores.forEach((valor, indice) => {
+        const td = document.createElement('td');
+        td.textContent = valor;
+        if (indice === 1) td.style.textAlign = 'left';
+        fila.appendChild(td);
+      });
+      tabla.appendChild(fila);
+    });
+    zonaHistorialExpediente.appendChild(tabla);
+  }
+
+  async function buscarExpedienteHistorial() {
+    const expediente = inputExpedienteHistorial.value.trim();
+    if (!expediente) {
+      mostrarMensaje(mensajeExpedienteHistorial, 'Escribí un número de expediente.', 'error');
+      return;
+    }
+    ocultarMensaje(mensajeExpedienteHistorial);
+    zonaHistorialExpediente.innerHTML = '';
+    botonBuscarExpediente.disabled = true;
+    botonBuscarExpediente.textContent = 'Buscando…';
+    try {
+      const respuesta = await fetch('/historial_expediente?expediente=' + encodeURIComponent(expediente));
+      const cuerpo = await respuesta.json().catch(() => ({}));
+      if (!respuesta.ok) {
+        mostrarMensaje(mensajeExpedienteHistorial, cuerpo.error || 'No se pudo buscar el expediente.', 'error');
+      } else {
+        renderizarHistorialExpediente(cuerpo.items || []);
+      }
+    } catch (err) {
+      mostrarMensaje(mensajeExpedienteHistorial, 'No se pudo conectar con la página. Volvé a intentar.', 'error');
+    }
+    botonBuscarExpediente.disabled = false;
+    botonBuscarExpediente.textContent = 'Buscar';
+  }
+  botonBuscarExpediente.addEventListener('click', buscarExpedienteHistorial);
+  inputExpedienteHistorial.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') buscarExpedienteHistorial();
   });
 </script>
 </body>
