@@ -1439,20 +1439,22 @@
   let worksheetPreadjudicacion = null;
   let tituloPreadjudicacionActual = '';
 
-  // Renglón, Descripción, Cantidad, Precio, Proveedor: tal cual vienen
-  // del PDF (de solo lectura). Costo y % los completa el padre a mano;
-  // P. Venta se autocalcula con la misma fórmula que "Precio final" en
-  // el comparador F.41, pero queda editable por si la quiere pisar.
+  // Renglón, Código, Descripción, Cantidad, Precio, Proveedor: tal cual
+  // vienen del PDF (de solo lectura). Costo y % los completa el padre a
+  // mano; P. Venta se autocalcula con la misma fórmula que "Precio
+  // final" en el comparador F.41, pero queda editable por si la quiere
+  // pisar.
   function construirFilaPreadjudicacion(item, fila) {
     return [
       item.renglon,
+      item.codigo || '',
       item.descripcion || '',
       item.cantidad === null || item.cantidad === undefined ? '' : item.cantidad,
       item.precio_unitario === null || item.precio_unitario === undefined ? '' : item.precio_unitario,
       item.proveedor || '',
       '',
       '',
-      '=F' + fila + '*((G' + fila + '+100)/100)',
+      '=G' + fila + '*((H' + fila + '+100)/100)',
     ];
   }
 
@@ -1481,6 +1483,7 @@
           tableHeight: '65vh',
           columns: [
             { type: 'numeric', title: 'Renglón', width: 70, readOnly: true },
+            { type: 'text', title: 'Código', width: 110, readOnly: true },
             { type: 'text', title: 'Descripción', width: 320, readOnly: true, align: 'left', wordWrap: true },
             { type: 'numeric', title: 'Cantidad', width: 80, readOnly: true },
             Object.assign({ type: 'text', title: 'Precio', width: 120, readOnly: true }, MASCARA_PESOS),

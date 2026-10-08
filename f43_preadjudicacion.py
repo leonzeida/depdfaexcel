@@ -65,10 +65,11 @@ RE_CONTRATACION_F43 = re.compile(r"CONTRATACI[ÓO]N DIRECTA N[º°]\s*:?\s*(\d+/
 # en dos lineas distintas.
 TOL_LINEA = 2.0
 # Salto vertical (en puntos) que separa un simple wrap de texto dentro de
-# la misma celda de un renglon nuevo empezando. Se determino comparando
-# la distribucion real de saltos entre lineas consecutivas en los PDF de
-# ejemplo: los wraps dentro de una celda miden ~5-11pt, los saltos entre
-# bloques (renglon a renglon, o renglon a marcador) miden ~17-24pt.
+# la misma celda de un nombre de rubro de mas de una linea empezando a
+# aparecer (relleno del PROXIMO item, ver mas abajo). Se determino
+# comparando la distribucion real de saltos entre lineas consecutivas en
+# los PDF de ejemplo: los wraps dentro de una celda miden ~5-11pt, los
+# saltos entre bloques (item a item, o item a marcador) miden ~17-24pt.
 UMBRAL_SALTO_FILA = 14.0
 
 
@@ -149,16 +150,46 @@ def _procesar_resto_de_linea(palabras, item_actual):
             item_actual["_punit"].append(w)
 
 
+def _palabras_desc_de_linea(linea):
+    return [w for w in linea if COL_CODIGO_MAX <= w["x0"] < COL_DESC_MAX and w["x1"] <= COL_DESC_MAX]
+
+
+def _recortar_nombre_de_rubro(desc_palabras):
+    """El nombre de "rubro" (categoria del insumo, ej. "ANTIVIRAL.",
+    "INSUMOS DE USO MEDICO Y DE LABORATORIO.") siempre aparece ANTES de
+    la descripcion real del item, y siempre termina en un punto - a
+    veces como sufijo de la ultima palabra ("ANTIVIRAL."), a veces como
+    token "." suelto (confirmado con datos reales: "AGUA . AGUA
+    DESTILADA X 500 ml."). La descripcion real arranca siempre
+    inmediatamente despues de ese primer punto. Si no aparece ningun
+    punto, no se recorta nada (mejor mostrar de mas que perder texto
+    real)."""
+    for i, w in enumerate(desc_palabras):
+        if w["text"].endswith("."):
+            resto = desc_palabras[i + 1:]
+            return resto if resto else desc_palabras
+    return desc_palabras
+
+
 def extraer_adjudicaciones(pdf_path: Path) -> list:
     """Lista de items adjudicados: {renglon, codigo, descripcion,
-    cantidad, precio_unitario, proveedor}.
+    cantidad, precio_unitario, proveedor}, en el mismo orden en que
+    aparecen en el PDF (agrupados por "Firma Adjudicada", no por numero
+    de renglon).
 
     El documento no tiene una columna de proveedor: el nombre aparece
     como un bloque "Firma Adjudicada: <nombre> - C.U.I.T: <cuit>" que
     agrupa 1 o mas renglones siguientes, cerrado por "Total Adjudicado a
     ...". Tampoco hay lineas verticales que delimiten las filas (a
     diferencia del F.41), asi que cada renglon nuevo se ancla en la
-    palabra de la columna Renglon que sea un digito puro."""
+    palabra de la columna Renglon que sea un digito puro.
+
+    Antes de cada renglon aparece tambien el nombre de "rubro" (categoria
+    del insumo) del PROXIMO item, que puede compartir linea con el
+    comienzo real de su descripcion (ver _recortar_nombre_de_rubro) - por
+    eso ese texto no se descarta: se junta en `buffer_pendiente` y se le
+    agrega al item cuando se encuentra su ancla de renglon, recortando
+    recien ahi la parte que es nombre de rubro."""
     lineas = _agrupar_lineas(pdf_path)
 
     items = []
@@ -168,10 +199,14 @@ def extraer_adjudicaciones(pdf_path: Path) -> list:
     # narrativo de la pagina 0 (que puede traer numeros sueltos que de
     # otra forma podrian confundirse con un renglon).
     en_header_tabla = True
-    # True mientras se esta "entre" el final del contenido real del item
-    # actual y el proximo ancla de renglon - es decir, mientras se ve el
-    # nombre/codigo de rubro del PROXIMO item, que se descarta.
-    en_buffer_siguiente = False
+    # True mientras no se esta dentro del contenido ya confirmado de un
+    # item (antes del primer renglon de una Firma Adjudicada, justo
+    # despues de un Total Adjudicado, o mientras aparece el nombre de
+    # rubro del PROXIMO item) - en ese estado, el texto de Descripcion
+    # que se va viendo se junta en `buffer_pendiente` en vez de
+    # agregarse al item actualmente abierto.
+    modo_pendiente = True
+    buffer_pendiente = []
     top_anterior = None
 
     def cerrar_item():
@@ -179,6 +214,7 @@ def extraer_adjudicaciones(pdf_path: Path) -> list:
         if item_actual is None:
             return
         desc_palabras = sorted(item_actual["_desc"], key=lambda w: (round(w["top"], 1), w["x0"]))
+        desc_palabras = _recortar_nombre_de_rubro(desc_palabras)
         descripcion = " ".join(w["text"] for w in desc_palabras).strip()
         if item_actual["_obs"]:
             descripcion = (descripcion + " (Obs.: " + " ".join(item_actual["_obs"]) + ")").strip()
@@ -206,12 +242,14 @@ def extraer_adjudicaciones(pdf_path: Path) -> list:
             cerrar_item()
             proveedor_actual = m_firma.group(1).strip()
             en_header_tabla = False
-            en_buffer_siguiente = False
+            modo_pendiente = True
+            buffer_pendiente = []
             continue
 
         if RE_TOTAL_ADJUDICADO.match(texto):
             cerrar_item()
-            en_buffer_siguiente = True
+            modo_pendiente = True
+            buffer_pendiente = []
             continue
 
         rg_palabras = [w for w in linea if w["x0"] < COL_RG_MAX]
@@ -224,37 +262,50 @@ def extraer_adjudicaciones(pdf_path: Path) -> list:
                 "renglon": int(rg_texto),
                 "proveedor": proveedor_actual,
                 "codigo": "",
-                "_desc": [],
+                "_desc": list(buffer_pendiente),
                 "_cant": [],
                 "_punit": [],
                 "_obs": [],
             }
-            en_buffer_siguiente = False
+            buffer_pendiente = []
+            modo_pendiente = False
             _procesar_resto_de_linea(resto, item_actual)
             continue
 
+        if en_header_tabla:
+            continue
+
         if any(w["text"] == "Obs.:" for w in linea):
-            if item_actual is not None and not en_buffer_siguiente:
+            if item_actual is not None and not modo_pendiente:
                 nota = " ".join(w["text"] for w in linea if w["text"] != "Obs.:")
                 item_actual["_obs"].append(nota)
             continue
 
-        if item_actual is None or en_buffer_siguiente:
+        if modo_pendiente:
+            buffer_pendiente.extend(_palabras_desc_de_linea(linea))
+            continue
+
+        if item_actual is None:
             continue
 
         codigo_candidato = "".join(
             w["text"] for w in linea if COL_RG_MAX <= w["x0"] < COL_CODIGO_MAX
         )
         if RE_CODIGO_RUBRO.match(codigo_candidato) and not item_actual["codigo"]:
-            en_buffer_siguiente = True
+            # Arranca el relleno (nombre de rubro) del PROXIMO item: lo
+            # que haya de Descripcion en esta misma linea ya es parte de
+            # ese proximo item, no del actual.
+            modo_pendiente = True
+            buffer_pendiente = _palabras_desc_de_linea(linea)
             continue
 
-        # Linea ambigua (sin codigo de item reconocible): puede ser
-        # continuacion real del item actual (wrap corto, salto chico) o
-        # el nombre de rubro del PROXIMO item empezando a aparecer (salto
-        # grande).
+        # Linea ambigua (sin codigo de item ni de rubro reconocible):
+        # puede ser continuacion real del item actual (wrap corto, salto
+        # chico) o el nombre de rubro del PROXIMO item empezando a
+        # aparecer en mas de una linea (salto grande).
         if not RE_CODIGO_ITEM.match(codigo_candidato) and gap is not None and gap > UMBRAL_SALTO_FILA:
-            en_buffer_siguiente = True
+            modo_pendiente = True
+            buffer_pendiente = _palabras_desc_de_linea(linea)
             continue
 
         _procesar_resto_de_linea(linea, item_actual)
@@ -302,7 +353,11 @@ def extraer_items_desiertos(pdf_path: Path) -> list:
 def extraer_preadjudicacion_completa(pdf_path: Path) -> list:
     """Adjudicados + desiertos (estos ultimos con proveedor "DESIERTO" y
     el resto de los campos vacios, ya que el PDF no trae mas datos para
-    ellos), ordenados por renglon."""
+    ellos). Los adjudicados se devuelven en el mismo orden en que
+    aparecen en el PDF (agrupados por proveedor/Firma Adjudicada, no por
+    numero de renglon); los desiertos - que no tienen una posicion propia
+    en la tabla, solo se mencionan en una frase aparte - se agregan al
+    final, ordenados entre si por numero de renglon."""
     adjudicados = extraer_adjudicaciones(pdf_path)
     renglones_adjudicados = {it["renglon"] for it in adjudicados}
 
@@ -319,7 +374,7 @@ def extraer_preadjudicacion_completa(pdf_path: Path) -> list:
         if renglon not in renglones_adjudicados
     ]
 
-    return sorted(adjudicados + desiertos, key=lambda it: it["renglon"])
+    return adjudicados + desiertos
 
 
 def extraer_encabezado_f43(pdf_path: Path) -> dict:
@@ -344,19 +399,19 @@ def titulo_preadjudicacion(encabezado: dict) -> str:
 
 
 ENCABEZADOS_PREADJUDICACION = [
-    "Renglon", "Descripcion", "Cantidad", "Precio", "Proveedor", "Costo", "%", "P. Venta",
+    "Renglon", "Codigo", "Descripcion", "Cantidad", "Precio", "Proveedor", "Costo", "%", "P. Venta",
 ]
 
 
 def escribir_preadjudicacion_excel(titulo: str, filas: list, salida: Path):
     """Vuelca a un .xlsx la grilla de "Precios adjudicados" tal cual la
-    ve el usuario (8 columnas). `filas` es una lista de listas de 8
+    ve el usuario (9 columnas). `filas` es una lista de listas de 9
     valores en el mismo orden que ENCABEZADOS_PREADJUDICACION."""
     wb = Workbook()
     ws = wb.active
     ws.title = "Precios adjudicados"
 
-    ws.merge_cells("A1:H1")
+    ws.merge_cells("A1:I1")
     ws["A1"] = titulo
     ws["A1"].font = Font(bold=True, size=13, color="000000")
     ws["A1"].alignment = Alignment(horizontal="center")
@@ -372,18 +427,18 @@ def escribir_preadjudicacion_excel(titulo: str, filas: list, salida: Path):
         c.fill = relleno_encabezado
         c.alignment = centrado
 
-    columnas_moneda = (4, 6, 8)  # Precio, Costo, P. Venta
+    columnas_moneda = (5, 7, 9)  # Precio, Costo, P. Venta
     fila_excel = 3
     for fila in filas:
-        fila = (list(fila) + [None] * 8)[:8]
+        fila = (list(fila) + [None] * 9)[:9]
         for col, valor in enumerate(fila, start=1):
             c = ws.cell(row=fila_excel, column=col, value=valor if valor != "" else None)
-            c.alignment = Alignment(horizontal="left", wrap_text=True) if col == 2 else centrado
+            c.alignment = Alignment(horizontal="left", wrap_text=True) if col == 3 else centrado
             if col in columnas_moneda:
                 c.number_format = FMT_MONEDA_ARS
         fila_excel += 1
 
-    anchos = {"A": 10, "B": 50, "C": 10, "D": 14, "E": 28, "F": 14, "G": 8, "H": 14}
+    anchos = {"A": 10, "B": 16, "C": 46, "D": 10, "E": 14, "F": 28, "G": 14, "H": 8, "I": 14}
     for letra, ancho in anchos.items():
         ws.column_dimensions[letra].width = ancho
 
