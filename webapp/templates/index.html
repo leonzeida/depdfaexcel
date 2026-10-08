@@ -493,6 +493,7 @@
     <div class="fila-botones-comparar">
       <button type="submit" form="formulario-preadjudicacion" id="boton-cargar-preadjudicacion">Cargar ítems</button>
       <button type="button" id="boton-exportar-preadjudicacion" disabled>Exportar a Excel</button>
+      <button type="button" id="boton-nota-pedido-preadjudicacion" disabled>Descargar Nota de Pedido</button>
     </div>
 
     <div id="zona-tabla-preadjudicacion"></div>
@@ -1430,9 +1431,11 @@
   const formularioPreadjudicacion = document.getElementById('formulario-preadjudicacion');
   const botonCargarPreadjudicacion = document.getElementById('boton-cargar-preadjudicacion');
   const botonExportarPreadjudicacion = document.getElementById('boton-exportar-preadjudicacion');
+  const botonNotaPedidoPreadjudicacion = document.getElementById('boton-nota-pedido-preadjudicacion');
   const cargandoPreadjudicacion = document.getElementById('cargando-preadjudicacion');
   const mensajePreadjudicacion = document.getElementById('mensaje-preadjudicacion');
   const zonaTablaPreadjudicacion = document.getElementById('zona-tabla-preadjudicacion');
+  const pdfPreadjudicacion = document.getElementById('pdf-preadjudicacion');
 
   configurarZonaCarga('zona-preadjudicacion', 'pdf-preadjudicacion', 'nombre-pdf-preadjudicacion');
 
@@ -1497,7 +1500,24 @@
     });
     worksheetPreadjudicacion = instancias[0];
 
+    // Resaltar siempre los renglones que ganó Zeid Medical, para que se
+    // vean de un vistazo entre todos los proveedores de la licitación.
+    // El 4to parámetro (force=true) es necesario: la mayoría de estas
+    // columnas son de solo lectura (readOnly), y sin este flag
+    // jspreadsheet ignora en silencio cualquier setStyle sobre una celda
+    // readonly (mismo comportamiento que setValue, confirmado leyendo el
+    // bundle fuente).
+    items.forEach((item, indice) => {
+      if (!(item.proveedor || '').toUpperCase().includes('ZEID MEDICAL')) return;
+      const fila = indice + 1;
+      ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'].forEach(letra => {
+        worksheetPreadjudicacion.setStyle(letra + fila, 'background-color', '#fff3b0', true);
+        worksheetPreadjudicacion.setStyle(letra + fila, 'color', '#5a4a00', true);
+      });
+    });
+
     botonExportarPreadjudicacion.disabled = false;
+    botonNotaPedidoPreadjudicacion.disabled = false;
   }
 
   async function exportarPreadjudicacion() {
@@ -1538,12 +1558,53 @@
   }
   botonExportarPreadjudicacion.addEventListener('click', exportarPreadjudicacion);
 
+  // Vuelve a mandar el mismo PDF (el input conserva el archivo elegido
+  // tras el submit de "Cargar ítems") para que el servidor arme la Nota
+  // de Pedido solo con los renglones que ganó Zeid Medical, con el mismo
+  // membrete/formato que ya usa la Nota de Pedido del F.41 (precio en
+  // blanco, para que lo complete el proveedor de Zeid al cotizar).
+  async function descargarNotaPedidoPreadjudicacion() {
+    if (!pdfPreadjudicacion.files[0]) return;
+    botonNotaPedidoPreadjudicacion.disabled = true;
+    botonNotaPedidoPreadjudicacion.textContent = 'Generando…';
+
+    try {
+      const datosFormulario = new FormData();
+      datosFormulario.append('pdf', pdfPreadjudicacion.files[0]);
+      const respuesta = await fetch('/generar_nota_pedido_preadjudicacion', { method: 'POST', body: datosFormulario });
+      const cuerpo = await respuesta.json().catch(() => ({}));
+      if (!respuesta.ok) {
+        mostrarMensaje(mensajePreadjudicacion, cuerpo.error || 'No se pudo generar la Nota de Pedido.', 'error');
+      } else {
+        const archivo = cuerpo.archivos[0];
+        const blob = base64AArchivo(
+          archivo.datos,
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        );
+        const url = URL.createObjectURL(blob);
+        const enlace = document.createElement('a');
+        enlace.href = url;
+        enlace.download = archivo.nombre;
+        document.body.appendChild(enlace);
+        enlace.click();
+        enlace.remove();
+        URL.revokeObjectURL(url);
+      }
+    } catch (err) {
+      mostrarMensaje(mensajePreadjudicacion, 'No se pudo conectar con la página. Volvé a intentar.', 'error');
+    }
+    botonNotaPedidoPreadjudicacion.disabled = false;
+    botonNotaPedidoPreadjudicacion.textContent = 'Descargar Nota de Pedido';
+  }
+  botonNotaPedidoPreadjudicacion.addEventListener('click', descargarNotaPedidoPreadjudicacion);
+
   formularioPreadjudicacion.addEventListener('submit', async (e) => {
     e.preventDefault();
     ocultarMensaje(mensajePreadjudicacion);
     zonaTablaPreadjudicacion.innerHTML = '';
     worksheetPreadjudicacion = null;
     botonExportarPreadjudicacion.disabled = true;
+    botonNotaPedidoPreadjudicacion.disabled = true;
     botonCargarPreadjudicacion.disabled = true;
     botonCargarPreadjudicacion.textContent = 'Cargando…';
     cargandoPreadjudicacion.style.display = 'block';

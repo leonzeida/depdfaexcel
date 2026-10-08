@@ -53,10 +53,24 @@ RE_CODIGO_RUBRO = re.compile(r"^\d{2}\.00\.00\.[A-Z]\d{2}$")
 # ej. "4.01.008.043").
 RE_CODIGO_ITEM = re.compile(r"^\d\.\d{2}\.\d{3}\.\d{3}$")
 
-RE_EXPEDIENTE_F43 = re.compile(r"EXPTE N[º°]\s*([A-Z]?-?\d+/\d+)")
+# El prefijo de letra ("U-") queda fuera del grupo capturado a propósito,
+# igual criterio que RE_EXPEDIENTE en f41_a_excel.py (que tampoco lo
+# incluye) - así `encabezado["expediente"]` queda con el mismo formato en
+# los dos modulos y se puede reusar `nombre_archivo_notas_pedido` del
+# F.41 sin que duplique el prefijo.
+RE_EXPEDIENTE_F43 = re.compile(r"EXPTE N[º°]\s*[A-Z]?-?(\d+/\d+)")
 # A diferencia del F.41 (cuyo regex exige el formato "N°:") el F.43 no
 # lleva los dos puntos despues de "N°" ("CONTRATACIÓN DIRECTA N° 0588/26").
 RE_CONTRATACION_F43 = re.compile(r"CONTRATACI[ÓO]N DIRECTA N[º°]\s*:?\s*(\d+/\d+)")
+# La fecha/hora de apertura viene en prosa, no como "APERTURA: dd/mm/aaaa"
+# igual que en el F.41 (ej. "a los TREINTA (30) días del mes de
+# SEPTIEMBRE de 2026, siendo las 09:55 horas").
+RE_FECHA_F43 = re.compile(r"a los .+?\((\d{1,2})\)\s*d[ií]as del mes de (\w+) de (\d{4})", re.IGNORECASE)
+RE_HORA_F43 = re.compile(r"siendo las (\d{1,2}:\d{2}) horas", re.IGNORECASE)
+MESES_ES = {
+    "ENERO": 1, "FEBRERO": 2, "MARZO": 3, "ABRIL": 4, "MAYO": 5, "JUNIO": 6,
+    "JULIO": 7, "AGOSTO": 8, "SEPTIEMBRE": 9, "OCTUBRE": 10, "NOVIEMBRE": 11, "DICIEMBRE": 12,
+}
 
 # Palabras sueltas de la misma linea que su numero de renglon se agrupan
 # por redondeo de la coordenada vertical ("top"); el margen de tolerancia
@@ -334,6 +348,16 @@ def extraer_items_desiertos(pdf_path: Path) -> list:
     return sorted(numeros)
 
 
+# Nombre tal cual aparece en "Firma Adjudicada: ZEID MEDICAL S.R.L. -
+# C.U.I.T: ...". Se compara por substring en mayusculas (no exacto) para
+# no depender de variantes menores de puntuacion/espacios.
+NOMBRE_ZEID_MEDICAL = "ZEID MEDICAL"
+
+
+def es_zeid_medical(proveedor: str) -> bool:
+    return NOMBRE_ZEID_MEDICAL in (proveedor or "").upper()
+
+
 def extraer_preadjudicacion_completa(pdf_path: Path) -> list:
     """Adjudicados + desiertos (estos ultimos con proveedor "DESIERTO" y
     el resto de los campos vacios, ya que el PDF no trae mas datos para
@@ -362,21 +386,39 @@ def extraer_preadjudicacion_completa(pdf_path: Path) -> list:
 
 
 def extraer_encabezado_f43(pdf_path: Path) -> dict:
+    """Ademas de expediente/contratacion, incluye apertura ("dd/mm/aaaa")
+    y hora ("HH:MM") - con el mismo formato que usa `encabezado` en
+    f41_a_excel.py - para poder reusar `escribir_notas_pedido` y
+    `nombre_archivo_notas_pedido` de ese modulo al armar la Nota de
+    Pedido de los renglones que ganó Zeid Medical."""
     with pdfplumber.open(pdf_path) as pdf:
         texto = pdf.pages[0].extract_text() or ""
+    texto_una_linea = re.sub(r"\s+", " ", texto)
 
     m_exp = RE_EXPEDIENTE_F43.search(texto)
     m_con = RE_CONTRATACION_F43.search(texto)
+    m_fecha = RE_FECHA_F43.search(texto_una_linea)
+    m_hora = RE_HORA_F43.search(texto_una_linea)
+
+    apertura = ""
+    if m_fecha:
+        dia, mes_nombre, anio = m_fecha.groups()
+        mes_num = MESES_ES.get(mes_nombre.upper())
+        if mes_num:
+            apertura = f"{int(dia):02d}/{mes_num:02d}/{anio}"
+
     return {
         "expediente": m_exp.group(1) if m_exp else "",
         "contratacion": m_con.group(1) if m_con else "",
+        "apertura": apertura,
+        "hora": m_hora.group(1) if m_hora else "",
     }
 
 
 def titulo_preadjudicacion(encabezado: dict) -> str:
     partes = ["Acta de Preadjudicación"]
     if encabezado.get("expediente"):
-        partes.append(f"Expte. N° {encabezado['expediente']}")
+        partes.append(f"Expte. N° U-{encabezado['expediente']}")
     if encabezado.get("contratacion"):
         partes.append(f"Contratación Directa N° {encabezado['contratacion']}")
     return " — ".join(partes)

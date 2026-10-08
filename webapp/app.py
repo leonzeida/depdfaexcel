@@ -33,6 +33,7 @@ from f41_a_excel import (  # noqa: E402
 from db_referencia import ErrorPreciosReferencia, guardar_precios_referencia, leer_precios_referencia
 from editar_f41_pdf import generar_f41_editado
 from f43_preadjudicacion import (
+    es_zeid_medical,
     escribir_preadjudicacion_excel,
     extraer_encabezado_f43,
     extraer_preadjudicacion_completa,
@@ -341,6 +342,48 @@ def exportar_preadjudicacion():
         datos = base64.b64encode(salida.read_bytes()).decode("ascii")
 
     return jsonify(archivos=[{"etiqueta": "Precios adjudicados", "nombre": salida.name, "datos": datos}])
+
+
+@app.route("/generar_nota_pedido_preadjudicacion", methods=["POST"])
+def generar_nota_pedido_preadjudicacion():
+    archivo = request.files.get("pdf")
+    if not archivo or archivo.filename == "":
+        return jsonify(error="Hace falta volver a adjuntar el PDF del acta para generar la Nota de Pedido."), 400
+
+    if not archivo.filename.lower().endswith(".pdf"):
+        return jsonify(error="El archivo tiene que ser un PDF."), 400
+
+    with tempfile.TemporaryDirectory() as tmp:
+        pdf_path = Path(tmp) / archivo.filename
+        archivo.save(pdf_path)
+
+        try:
+            items = extraer_preadjudicacion_completa(pdf_path)
+            encabezado = extraer_encabezado_f43(pdf_path)
+        except Exception:
+            return jsonify(
+                error="No se pudo leer ese PDF. Revisá que sea un Acta de Preadjudicación F.43 válida."
+            ), 400
+
+        items_zeid = [it for it in items if es_zeid_medical(it["proveedor"])]
+        if not items_zeid:
+            return jsonify(error="Zeid Medical no ganó ningún renglón en esta acta."), 400
+
+        filas = [
+            {"rg": it["renglon"], "descripcion": it["descripcion"], "cantidad": it["cantidad"]}
+            for it in items_zeid
+        ]
+
+        try:
+            salida = Path(tmp) / f"{nombre_archivo_notas_pedido(encabezado)}.xlsx"
+            escribir_notas_pedido(filas, encabezado, salida)
+        except Exception as exc:
+            print(f"[nota-pedido-preadjudicacion] Fallo generando el Excel: {exc}", file=sys.stderr, flush=True)
+            return jsonify(error="No se pudo generar la Nota de Pedido."), 500
+
+        datos = base64.b64encode(salida.read_bytes()).decode("ascii")
+
+    return jsonify(archivos=[{"etiqueta": "Nota de Pedido", "nombre": salida.name, "datos": datos}])
 
 
 def abrir_navegador():
