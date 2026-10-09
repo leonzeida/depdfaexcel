@@ -96,16 +96,34 @@ CREATE TABLE IF NOT EXISTS historial_licitaciones (
 );
 """
 
+# Agregada después de que la tabla ya existía en producción, por eso
+# ALTER TABLE en vez de meterla directo en el CREATE TABLE de arriba.
+# "Renglón" es el número de línea oficial del ítem DENTRO de un
+# expediente puntual -- a diferencia de descripcion_normalizada (que es
+# una aproximación de texto), es el identificador que usa el propio
+# trámite y es estable entre el F.41 y el F.43 de una misma licitación
+# (confirmado comparando renglón por renglón en 3 expedientes reales:
+# coincide 100% de las veces, excepto los renglones declarados
+# "desiertos" en el F.43, que no tienen código). Se usa para unir mejor
+# la etapa 1 (oferta) con la etapa 2 (resultado) cuando las descripciones
+# del F.41 y el F.43 no son textualmente idénticas -- ver
+# _resolver_clave_existente. No reemplaza la PRIMARY KEY existente (eso
+# requeriría migrar datos reales ya guardados que no tienen renglón).
+_AGREGAR_COLUMNA_RENGLON = """
+ALTER TABLE historial_licitaciones ADD COLUMN IF NOT EXISTS renglon INTEGER;
+"""
+
 # COALESCE(EXCLUDED.x, tabla.x) en vez de pisar directo: las etapas 1/2/3
 # se guardan en momentos distintos (a veces días de diferencia) y cada
 # upsert solo trae sus propias columnas - sin esto, guardar la etapa 2
 # pisaría con NULL lo que ya se había guardado en la etapa 1, y viceversa.
 _UPSERT_OFERTA = """
 INSERT INTO historial_licitaciones (
-    codigo, descripcion_normalizada, expediente, descripcion, contratacion, cantidad,
+    codigo, descripcion_normalizada, expediente, renglon, descripcion, contratacion, cantidad,
     precio_ofertado, porcentaje_ofertado, proveedor_elegido, fecha_oferta
-) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT (codigo, descripcion_normalizada, expediente) DO UPDATE SET
+    renglon = COALESCE(EXCLUDED.renglon, historial_licitaciones.renglon),
     descripcion = COALESCE(EXCLUDED.descripcion, historial_licitaciones.descripcion),
     contratacion = COALESCE(EXCLUDED.contratacion, historial_licitaciones.contratacion),
     cantidad = COALESCE(EXCLUDED.cantidad, historial_licitaciones.cantidad),
@@ -117,11 +135,12 @@ ON CONFLICT (codigo, descripcion_normalizada, expediente) DO UPDATE SET
 
 _UPSERT_ADJUDICACION = """
 INSERT INTO historial_licitaciones (
-    codigo, descripcion_normalizada, expediente, descripcion, contratacion, cantidad,
+    codigo, descripcion_normalizada, expediente, renglon, descripcion, contratacion, cantidad,
     gano_zeid, precio_adjudicado, proveedor_ganador, fecha_adjudicacion,
     costo_real, precio_venta_real, fecha_costo
-) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT (codigo, descripcion_normalizada, expediente) DO UPDATE SET
+    renglon = COALESCE(EXCLUDED.renglon, historial_licitaciones.renglon),
     descripcion = COALESCE(EXCLUDED.descripcion, historial_licitaciones.descripcion),
     contratacion = COALESCE(EXCLUDED.contratacion, historial_licitaciones.contratacion),
     cantidad = COALESCE(EXCLUDED.cantidad, historial_licitaciones.cantidad),
@@ -154,9 +173,30 @@ def _conectar():
     cur.execute(_AGREGAR_COLUMNA_PORCENTAJE)
     cur.execute(_AGREGAR_COLUMNA_MEJOR_PROVEEDOR)
     cur.execute(_CREAR_TABLA_HISTORIAL)
+    cur.execute(_AGREGAR_COLUMNA_RENGLON)
     cur.close()
     conn.commit()
     return conn
+
+
+def _resolver_clave_existente(cur, expediente, renglon, codigo, descripcion_normalizada):
+    """Si ya hay una fila guardada para este renglón de este expediente
+    (por ejemplo la oferta del F.41, guardada antes de cargar el F.43, o
+    viceversa), reusa SU (codigo, descripcion_normalizada) para el
+    upsert, en vez del que se acaba de calcular -- así las dos etapas se
+    unen en la misma fila incluso si el F.41 y el F.43 formatearon la
+    descripción de ese ítem de forma distinta. Sin esto, cada documento
+    podría terminar creando su propia fila separada para el mismo ítem
+    real."""
+    if renglon is None:
+        return codigo, descripcion_normalizada
+    cur.execute(
+        "SELECT codigo, descripcion_normalizada FROM historial_licitaciones "
+        "WHERE expediente = %s AND renglon = %s LIMIT 1;",
+        (expediente, renglon),
+    )
+    fila = cur.fetchone()
+    return (fila[0], fila[1]) if fila else (codigo, descripcion_normalizada)
 
 
 def _normalizar_descripcion(descripcion: str) -> str:
@@ -248,37 +288,42 @@ def guardar_precios_referencia(items: list):
 def guardar_oferta_historial(items: list, encabezado: dict):
     """Guarda la etapa 1 (lo que Zeid ofertó) del historial de
     licitaciones. `items`: lista de {"codigo", "descripcion", "cantidad",
-    "precio_ofertado", "porcentaje_ofertado", "proveedor_elegido"}.
-    `encabezado`: {"expediente", "contratacion"} del F.41 cargado. No
-    hace nada si no hay expediente (no se puede vincular a una
-    licitación)."""
+    "precio_ofertado", "porcentaje_ofertado", "proveedor_elegido",
+    "renglon"?}. `encabezado`: {"expediente", "contratacion"} del F.41
+    cargado. No hace nada si no hay expediente (no se puede vincular a
+    una licitación)."""
     expediente = (encabezado or {}).get("expediente") or ""
     if not items or not expediente:
         return
 
     contratacion = (encabezado or {}).get("contratacion")
     hoy = datetime.now(ZONA_HORARIA_ARGENTINA).date()
-    filas = [
-        (
-            item["codigo"],
-            _normalizar_descripcion(item["descripcion"]),
-            expediente,
-            item["descripcion"],
-            contratacion,
-            item.get("cantidad"),
-            item.get("precio_ofertado"),
-            item.get("porcentaje_ofertado"),
-            item.get("proveedor_elegido"),
-            hoy,
-        )
-        for item in items
-    ]
 
     conn = None
     try:
         conn = _conectar()
         cur = conn.cursor()
-        cur.executemany(_UPSERT_OFERTA, filas)
+        for item in items:
+            renglon = item.get("renglon")
+            codigo, descripcion_normalizada = _resolver_clave_existente(
+                cur, expediente, renglon, item["codigo"], _normalizar_descripcion(item["descripcion"])
+            )
+            cur.execute(
+                _UPSERT_OFERTA,
+                (
+                    codigo,
+                    descripcion_normalizada,
+                    expediente,
+                    renglon,
+                    item["descripcion"],
+                    contratacion,
+                    item.get("cantidad"),
+                    item.get("precio_ofertado"),
+                    item.get("porcentaje_ofertado"),
+                    item.get("proveedor_elegido"),
+                    hoy,
+                ),
+            )
         cur.close()
         conn.commit()
     except ErrorPreciosReferencia:
@@ -297,38 +342,44 @@ def guardar_resultado_adjudicacion(items: list, encabezado: dict):
     (costo real) del historial de licitaciones. `items`: lista de
     {"codigo", "descripcion", "cantidad", "gano_zeid",
     "precio_adjudicado", "proveedor_ganador", "costo_real"?,
-    "precio_venta_real"?}. `encabezado`: {"expediente", "contratacion"}
-    del F.43 cargado."""
+    "precio_venta_real"?, "renglon"?}. `encabezado`: {"expediente",
+    "contratacion"} del F.43 cargado."""
     expediente = (encabezado or {}).get("expediente") or ""
     if not items or not expediente:
         return
 
     contratacion = (encabezado or {}).get("contratacion")
     hoy = datetime.now(ZONA_HORARIA_ARGENTINA).date()
-    filas = [
-        (
-            item["codigo"],
-            _normalizar_descripcion(item["descripcion"]),
-            expediente,
-            item["descripcion"],
-            contratacion,
-            item.get("cantidad"),
-            item.get("gano_zeid"),
-            item.get("precio_adjudicado"),
-            item.get("proveedor_ganador"),
-            hoy,
-            item.get("costo_real"),
-            item.get("precio_venta_real"),
-            hoy if (item.get("costo_real") is not None or item.get("precio_venta_real") is not None) else None,
-        )
-        for item in items
-    ]
 
     conn = None
     try:
         conn = _conectar()
         cur = conn.cursor()
-        cur.executemany(_UPSERT_ADJUDICACION, filas)
+        for item in items:
+            renglon = item.get("renglon")
+            codigo, descripcion_normalizada = _resolver_clave_existente(
+                cur, expediente, renglon, item["codigo"], _normalizar_descripcion(item["descripcion"])
+            )
+            tiene_costo = item.get("costo_real") is not None or item.get("precio_venta_real") is not None
+            cur.execute(
+                _UPSERT_ADJUDICACION,
+                (
+                    codigo,
+                    descripcion_normalizada,
+                    expediente,
+                    renglon,
+                    item["descripcion"],
+                    contratacion,
+                    item.get("cantidad"),
+                    item.get("gano_zeid"),
+                    item.get("precio_adjudicado"),
+                    item.get("proveedor_ganador"),
+                    hoy,
+                    item.get("costo_real"),
+                    item.get("precio_venta_real"),
+                    hoy if tiene_costo else None,
+                ),
+            )
         cur.close()
         conn.commit()
     except ErrorPreciosReferencia:
@@ -403,15 +454,17 @@ def leer_resumen_proveedores() -> dict:
 def leer_historial_por_expediente(expediente: str) -> list:
     """Todas las filas de historial_licitaciones para un expediente
     puntual (sin la columna interna descripcion_normalizada), ordenadas
-    por código."""
+    por renglón (el orden real del expediente -- cae a código para las
+    filas viejas que se guardaron antes de existir esta columna, donde
+    renglon es NULL)."""
     conn = None
     try:
         conn = _conectar()
         cur = conn.cursor()
         cur.execute(
             "SELECT codigo, descripcion, cantidad, precio_ofertado, proveedor_elegido, "
-            "gano_zeid, precio_adjudicado, proveedor_ganador, costo_real, precio_venta_real "
-            "FROM historial_licitaciones WHERE expediente = %s ORDER BY codigo;",
+            "gano_zeid, precio_adjudicado, proveedor_ganador, costo_real, precio_venta_real, renglon "
+            "FROM historial_licitaciones WHERE expediente = %s ORDER BY renglon NULLS LAST, codigo;",
             (expediente,),
         )
         filas = cur.fetchall()
@@ -438,10 +491,11 @@ def leer_historial_por_expediente(expediente: str) -> list:
             "proveedor_ganador": proveedor_ganador,
             "costo_real": float(costo_real) if costo_real is not None else None,
             "precio_venta_real": float(precio_venta_real) if precio_venta_real is not None else None,
+            "renglon": renglon,
         }
         for (
             codigo, descripcion, cantidad, precio_ofertado, proveedor_elegido,
-            gano_zeid, precio_adjudicado, proveedor_ganador, costo_real, precio_venta_real,
+            gano_zeid, precio_adjudicado, proveedor_ganador, costo_real, precio_venta_real, renglon,
         ) in filas
     ]
 
@@ -456,11 +510,11 @@ def leer_historial_completo() -> list:
         conn = _conectar()
         cur = conn.cursor()
         cur.execute(
-            "SELECT codigo, descripcion, expediente, contratacion, cantidad, "
+            "SELECT codigo, renglon, descripcion, expediente, contratacion, cantidad, "
             "precio_ofertado, porcentaje_ofertado, proveedor_elegido, fecha_oferta, "
             "gano_zeid, precio_adjudicado, proveedor_ganador, fecha_adjudicacion, "
             "costo_real, precio_venta_real, fecha_costo "
-            "FROM historial_licitaciones ORDER BY expediente, codigo;"
+            "FROM historial_licitaciones ORDER BY expediente, renglon NULLS LAST, codigo;"
         )
         filas = cur.fetchall()
         cur.close()
@@ -477,7 +531,7 @@ def leer_historial_completo() -> list:
 
 
 ENCABEZADOS_HISTORIAL = [
-    "Codigo", "Descripcion", "Expediente", "Contratacion", "Cantidad",
+    "Codigo", "Renglon", "Descripcion", "Expediente", "Contratacion", "Cantidad",
     "Precio ofertado", "% ofertado", "Proveedor elegido", "Fecha oferta",
     "Gano Zeid", "Precio adjudicado", "Proveedor ganador", "Fecha adjudicacion",
     "Costo real", "Precio venta real", "Fecha costo",
@@ -502,9 +556,9 @@ def escribir_historial_excel(filas: list, salida: Path):
         c.fill = relleno_encabezado
         c.alignment = centrado
 
-    columnas_moneda = (6, 11, 14, 15)  # Precio ofertado, Precio adjudicado, Costo real, Precio venta real
-    columnas_fecha = (9, 13, 16)
-    columna_booleana = 10  # Gano Zeid
+    columnas_moneda = (7, 12, 15, 16)  # Precio ofertado, Precio adjudicado, Costo real, Precio venta real
+    columnas_fecha = (10, 14, 17)
+    columna_booleana = 11  # Gano Zeid
     fila_excel = 2
     for fila in filas:
         for col, valor in enumerate(fila, start=1):
@@ -513,14 +567,14 @@ def escribir_historial_excel(filas: list, salida: Path):
             elif col == columna_booleana and valor is not None:
                 valor = "Si" if valor else "No"
             c = ws.cell(row=fila_excel, column=col, value=valor)
-            c.alignment = Alignment(horizontal="left", wrap_text=True) if col == 2 else centrado
+            c.alignment = Alignment(horizontal="left", wrap_text=True) if col == 3 else centrado
             if col in columnas_moneda and valor is not None:
                 c.number_format = FMT_MONEDA_ARS
         fila_excel += 1
 
     anchos = {
-        "A": 14, "B": 46, "C": 14, "D": 14, "E": 10, "F": 14, "G": 10,
-        "H": 24, "I": 12, "J": 10, "K": 14, "L": 24, "M": 14, "N": 12, "O": 14, "P": 12,
+        "A": 14, "B": 10, "C": 46, "D": 14, "E": 14, "F": 10, "G": 14,
+        "H": 10, "I": 24, "J": 12, "K": 10, "L": 14, "M": 24, "N": 14, "O": 12, "P": 14, "Q": 12,
     }
     for letra, ancho in anchos.items():
         ws.column_dimensions[letra].width = ancho

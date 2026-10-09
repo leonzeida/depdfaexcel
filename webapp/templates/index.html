@@ -1250,6 +1250,7 @@
       ultimo_precio: precioFinal,
       porcentaje: porcentaje,
       mejor_proveedor: mejorProveedor,
+      renglon: item.rg,
     };
   }
 
@@ -2070,7 +2071,7 @@
     tabla.className = 'tabla-historial';
     const encabezado = document.createElement('tr');
     [
-      'Código', 'Descripción', 'Cantidad', 'Precio ofertado', 'Proveedor elegido',
+      'Rg', 'Código', 'Descripción', 'Cantidad', 'Precio ofertado', 'Proveedor elegido',
       '¿Ganó Zeid?', 'Precio adjudicado', 'Proveedor ganador', 'Costo real', 'P. Venta real',
     ].forEach(titulo => {
       const th = document.createElement('th');
@@ -2082,6 +2083,7 @@
     items.forEach(it => {
       const fila = document.createElement('tr');
       const valores = [
+        it.renglon ?? '',
         it.codigo || '',
         it.descripcion || '',
         it.cantidad ?? '',
@@ -2096,7 +2098,7 @@
       valores.forEach((valor, indice) => {
         const td = document.createElement('td');
         td.textContent = valor;
-        if (indice === 1) td.style.textAlign = 'left';
+        if (indice === 2) td.style.textAlign = 'left';
         fila.appendChild(td);
       });
       tabla.appendChild(fila);

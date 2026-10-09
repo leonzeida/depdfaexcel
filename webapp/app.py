@@ -245,6 +245,12 @@ def guardar_referencia():
         except (TypeError, ValueError):
             cantidad = None
 
+        renglon = item.get("renglon")
+        try:
+            renglon = int(renglon) if renglon is not None else None
+        except (TypeError, ValueError):
+            renglon = None
+
         items_validos.append(
             {
                 "codigo": codigo,
@@ -253,6 +259,7 @@ def guardar_referencia():
                 "porcentaje": porcentaje,
                 "mejor_proveedor": mejor_proveedor,
                 "cantidad": cantidad,
+                "renglon": renglon,
             }
         )
 
@@ -273,6 +280,7 @@ def guardar_referencia():
                     "precio_ofertado": it["ultimo_precio"],
                     "porcentaje_ofertado": it["porcentaje"],
                     "proveedor_elegido": it["mejor_proveedor"],
+                    "renglon": it["renglon"],
                 }
                 for it in items_validos
             ]
@@ -551,6 +559,7 @@ def guardar_resultado_preadjudicacion():
                 "proveedor_ganador": it["proveedor"],
                 "costo_real": _num(datos_costo.get("costo")),
                 "precio_venta_real": _num(datos_costo.get("precio_venta")),
+                "renglon": it["renglon"],
             }
         )
 
