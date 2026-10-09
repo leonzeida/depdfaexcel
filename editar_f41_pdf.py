@@ -63,6 +63,15 @@ def _formatear_moneda(valor) -> str:
 FUENTE_TABLA = "Helvetica"
 TAMANO_TABLA = 8
 PADDING_CELDA = 3  # mismo valor que LEFTPADDING/RIGHTPADDING del TableStyle
+# Interlineado real de "Descripción" en el F.41 original, medido letra por
+# letra con pdfplumber: la altura de cada renglón de la tabla es, pixel a
+# pixel, (cantidad de líneas que ocupa la descripción) x 11.25 -- sin
+# ningún padding extra arriba/abajo (ver PADDING_VERTICAL_FILA). Con el
+# valor viejo (leading 9.5 + padding 7+7) una descripción larga ocupaba
+# notoriamente más alto que en el original, así que entraban menos
+# renglones por página y sobraba una página entera (confirmado: mismo PDF,
+# 4 páginas en el original contra 5 en el editado).
+LEADING_TABLA = 11.25
 
 
 def _texto_con_puntos(prefijo: str, ancho_objetivo: float, fuente: str, tamano: float) -> str:
@@ -285,7 +294,7 @@ def generar_f41_editado(pdf_original_path: Path, filas: list, salida: Path):
     ])
 
     estilos = getSampleStyleSheet()
-    estilo_celda = ParagraphStyle("celda", parent=estilos["Normal"], fontName=FUENTE_TABLA, fontSize=TAMANO_TABLA, leading=9.5)
+    estilo_celda = ParagraphStyle("celda", parent=estilos["Normal"], fontName=FUENTE_TABLA, fontSize=TAMANO_TABLA, leading=LEADING_TABLA)
 
     anchos_columnas = _anchos_columnas(info)
     ancho_precio_unitario, ancho_total = anchos_columnas[4], anchos_columnas[5]
@@ -335,10 +344,13 @@ def generar_f41_editado(pdf_original_path: Path, filas: list, salida: Path):
     # columna, como en cualquier otra fila, no se ve.
     filas_tabla.append([texto_total, "", "", "", "", ""])
 
-    PADDING_VERTICAL_FILA = 7  # más generoso que PADDING_CELDA: en el original
-    # los renglones de datos se separan solo por espacio en blanco, sin
-    # ninguna línea entre ellas, así que necesitan más aire para no
-    # verse amontonados.
+    # En el original los renglones de datos no tienen padding vertical
+    # propio -- se separan solo por el interlineado de LEADING_TABLA (de
+    # ahí que la altura real de cada fila sea exactamente líneas x 11.25,
+    # confirmado letra por letra). Meterle padding acá además del
+    # interlineado es lo que inflaba la altura de cada fila por encima del
+    # original.
+    PADDING_VERTICAL_FILA = 0
 
     tabla = Table(filas_tabla, colWidths=anchos_columnas, repeatRows=1)
     tabla.setStyle(TableStyle([
