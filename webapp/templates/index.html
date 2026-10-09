@@ -463,7 +463,7 @@
 
   <nav class="pestanas">
     <button type="button" class="boton-pestana activa" data-panel="panel-convertir">Convertir a Excel</button>
-    <button type="button" class="boton-pestana" data-panel="panel-comparar">Comparar precios</button>
+    <button type="button" class="boton-pestana" data-panel="panel-comparar">Comparar costos</button>
     <button type="button" class="boton-pestana" data-panel="panel-pedido">Editar F.41</button>
     <button type="button" class="boton-pestana" data-panel="panel-preadjudicacion">Precios adjudicados</button>
     <button type="button" class="boton-pestana" data-panel="panel-historial">Historial</button>
@@ -496,7 +496,7 @@
 
   <div class="tarjeta" id="panel-comparar" hidden>
     <div class="ancho-angosto">
-      <h2>Comparar precios de proveedores</h2>
+      <h2>Comparar costos de proveedores</h2>
       <p class="subtitulo">Subí un F.41, cargá el precio de hasta 4 proveedores por ítem y mirá cuál conviene. El último precio guardado de cada ítem aparece solo.</p>
 
       <div class="mensaje" id="mensaje-comparar"></div>
@@ -606,7 +606,7 @@
   <div class="tarjeta" id="panel-historial" hidden>
     <div class="ancho-angosto">
       <h2>Historial de licitaciones</h2>
-      <p class="subtitulo">Resumen de qué tan seguido gana cada proveedor propio de Zeid, armado con lo que se va guardando desde "Comparar precios" y "Precios adjudicados".</p>
+      <p class="subtitulo">Resumen de qué tan seguido gana cada proveedor propio de Zeid, armado con lo que se va guardando desde "Comparar costos" y "Precios adjudicados".</p>
 
       <div class="mensaje" id="mensaje-historial"></div>
       <div class="cargando" id="cargando-historial">Cargando el historial, un momento…</div>
@@ -1866,7 +1866,7 @@
         if (cuerpo.cotizacion_previa) {
           mostrarMensaje(
             mensajePreadjudicacion,
-            'Este expediente ya lo cotizaste en Comparar precios (' + cuerpo.cotizacion_previa.cantidad_items + ' ítem(s)) — mirá la pestaña Historial para ver el detalle completo.',
+            'Este expediente ya lo cotizaste en Comparar costos (' + cuerpo.cotizacion_previa.cantidad_items + ' ítem(s)) — mirá la pestaña Historial para ver el detalle completo.',
             'exito'
           );
         }
@@ -1902,7 +1902,7 @@
     if (!proveedores.length && !totales.licitaciones_ganadas) {
       const vacio = document.createElement('p');
       vacio.className = 'vacio-historial';
-      vacio.textContent = 'Todavía no hay licitaciones guardadas. Usá "Guardar precios de referencia" en Comparar precios y "Guardar resultados" en Precios adjudicados para ir sumando datos acá.';
+      vacio.textContent = 'Todavía no hay licitaciones guardadas. Usá "Guardar precios de referencia" en Comparar costos y "Guardar resultados" en Precios adjudicados para ir sumando datos acá.';
       zonaHistorial.appendChild(vacio);
       return;
     }
