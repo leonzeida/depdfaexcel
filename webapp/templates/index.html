@@ -1340,11 +1340,17 @@
   configurarZonaCarga('zona-pedido', 'pdf-pedido', 'nombre-pdf-pedido');
 
   // Renglón, Código, Descripción, Cantidad: tal cual vienen (o vacíos,
-  // para un renglón agregado a mano). Precio unitario y Total arrancan
-  // vacíos: el Total se completa solo apenas haya Cantidad y Precio
-  // unitario cargados (ver recalcularTodosLosTotalesPedido).
+  // para un renglón agregado a mano). Precio unitario arranca con el
+  // último precio de referencia guardado (si hay uno para ese ítem),
+  // pero queda editable como cualquier otra celda -- es un punto de
+  // partida, no un valor fijo. Total arranca vacío: se completa solo
+  // apenas haya Cantidad y Precio unitario cargados (ver
+  // recalcularTodosLosTotalesPedido).
   function construirFilaDatosPedido(item) {
-    return [item.rg, item.codigo, item.descripcion, item.cantidad, '', ''];
+    const precio = item.precio_referencia === null || item.precio_referencia === undefined
+      ? ''
+      : item.precio_referencia;
+    return [item.rg, item.codigo, item.descripcion, item.cantidad, precio, ''];
   }
 
   // A diferencia del comparador (que solo agrega filas al final),

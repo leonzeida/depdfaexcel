@@ -333,12 +333,24 @@ def items_para_editor():
         if not todas_las_filas:
             return jsonify(error="No se encontraron items en la tabla de ese PDF."), 400
 
+    try:
+        referencias = leer_precios_referencia()
+    except ErrorPreciosReferencia as exc:
+        # El autocompletado de precio de referencia es una comodidad, no
+        # un requisito: si la base de referencia falla, el editor sigue
+        # andando igual, nada más que sin precio precargado.
+        print(f"[precios-referencia] Fallo leyendo (editor F.41): {exc}", file=sys.stderr, flush=True)
+        referencias = {}
+
     items = [
         {
             "rg": item["rg"],
             "codigo": item["codigo"],
             "descripcion": item["descripcion"],
             "cantidad": item["cantidad"],
+            "precio_referencia": referencias.get(
+                clave_item(item["codigo"], item["descripcion"]), {}
+            ).get("ultimo_precio"),
         }
         for item in todas_las_filas
     ]
