@@ -1,20 +1,31 @@
 #!/usr/bin/env python3
 """Genera una versión EDITADA del PDF F.41 original: mantiene el
 membrete, el texto legal y la firma tal cual están en el PDF que se
-subió, y reemplaza únicamente la tabla de ítems por la que el usuario
-armó en la grilla web (agregando, sacando, reordenando y editando
-renglones, incluidos precio unitario y total).
+subió, y completa la tabla de ítems con los precios que cargó el
+usuario.
 
-A diferencia de un documento generado de cero: el membrete y el texto
-legal de la página 1 (y el bloque corto que se repite en cada página) se
-recortan del PDF original como IMÁGENES y se reusan tal cual — no se
-reconstruyen a mano — para garantizar que se vean exactamente iguales.
-Solo la tabla de ítems y el total final se dibujan de nuevo, con los
-datos editados.
+Dos caminos, elegidos automáticamente según qué tan distinta quedó la
+lista de renglones de la original (ver _filas_coinciden_con_original):
 
-Se mantiene separado de f41_a_excel.py (que es de extracción/Excel) y es
-el reemplazo de generar_pedido_pdf.py de la ronda anterior (esa versión
-generaba un documento propio de Zeid Medical, no el F.41 editado).
+1. SUPERPOSICIÓN (la mayoría de los casos reales: se cargan los mismos
+   renglones del expediente y solo se completa el precio unitario). Se
+   usan las páginas REALES del PDF original -- se les superpone el
+   precio/total encima de los "$.........." en blanco que ya trae el
+   formulario, sin rehacer la tabla. Esto garantiza que la cantidad de
+   páginas y en qué página cae cada renglón sean EXACTAMENTE iguales al
+   original, porque son, literalmente, las mismas páginas (a diferencia
+   de reconstruir la tabla de cero, que nunca termina de replicar
+   perfecto cómo pagina el sistema del gobierno -- confirmado comparando
+   varios expedientes reales letra por letra).
+2. RECONSTRUCCIÓN (si se agregó, sacó o reordenó algún renglón, o se
+   editó el código/descripción/cantidad): ahí no alcanza con superponer,
+   hay que rearmar la tabla entera. El membrete y el texto legal de la
+   página 1 (y el bloque corto que se repite en cada página) se recortan
+   del PDF original como IMÁGENES y se reusan tal cual -- no se
+   reconstruyen a mano -- para garantizar que se vean exactamente
+   iguales. Solo la tabla de ítems y el total final se dibujan de nuevo.
+
+Se mantiene separado de f41_a_excel.py (que es de extracción/Excel).
 """
 
 import io
@@ -24,8 +35,10 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pdfplumber
+from pypdf import PdfReader, PdfWriter
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase.pdfmetrics import stringWidth
+from reportlab.pdfgen import canvas as canvas_module
 from reportlab.platypus import (
     BaseDocTemplate,
     Frame,
@@ -39,7 +52,15 @@ from reportlab.platypus import (
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib import colors
 
-from f41_a_excel import COL_CANT_MAX, COL_CODIGO_MAX, COL_DESC_MAX, COL_RG_MAX, LEFT_BORDER_X, bandas_de_filas
+from f41_a_excel import (
+    COL_CANT_MAX,
+    COL_CODIGO_MAX,
+    COL_DESC_MAX,
+    COL_RG_MAX,
+    LEFT_BORDER_X,
+    bandas_de_filas,
+    extraer_pdf_completo,
+)
 
 ZONA_HORARIA_ARGENTINA = ZoneInfo("America/Argentina/Buenos_Aires")
 
@@ -252,11 +273,173 @@ def _dibujar_encabezado(imagen_bytes: bytes, alto_imagen: float, ancho_pagina: f
     return _onpage
 
 
-def generar_f41_editado(pdf_original_path: Path, filas: list, salida: Path):
-    """`filas`: lista de dicts con "rg", "codigo", "descripcion",
-    "cantidad", "precio_unitario", "total" (mismo criterio que la ronda
-    anterior: los valores de precio/total ya vienen resueltos del
-    frontend, no se recalculan acá).
+def _texto(valor) -> str:
+    return "" if valor is None else str(valor).strip()
+
+
+def _numeros_iguales(a, b) -> bool:
+    try:
+        return float(a) == float(b)
+    except (TypeError, ValueError):
+        return _texto(a) == _texto(b)
+
+
+def _filas_coinciden_con_original(filas: list, items_originales: list) -> bool:
+    """True si `filas` (lo que arma la grilla, ya editado por el usuario)
+    tiene exactamente los mismos renglones que `items_originales` (lo que
+    se extrajo del PDF subido), en el mismo orden, con el mismo código/
+    descripción/cantidad -- es decir, lo único que cambió fue completar
+    precio_unitario/total. Es la condición para poder usar el método de
+    superposición (ver módulo): si se agregó, sacó o reordenó algún
+    renglón, o se tocó el código/descripción/cantidad, ya no es seguro
+    superponer sobre las páginas originales (esos datos quedarían
+    desactualizados en el PDF, que no los vuelve a dibujar)."""
+    if len(filas) != len(items_originales):
+        return False
+    for fila, original in zip(filas, items_originales):
+        if not isinstance(fila, dict):
+            return False
+        if _texto(fila.get("rg")) != _texto(original["rg"]):
+            return False
+        if _texto(fila.get("codigo")) != _texto(original["codigo"]):
+            return False
+        if _texto(fila.get("descripcion")) != _texto(original["descripcion"]):
+            return False
+        if not _numeros_iguales(fila.get("cantidad"), original["cantidad"]):
+            return False
+    return True
+
+
+def _mapa_precios_original(pdf_path: Path) -> list:
+    """Recorre el PDF original página por página y arma, para cada una,
+    dónde hay que superponer qué: la posición real (x, top, bottom -- en
+    el sistema de coordenadas de pdfplumber, origen arriba-izquierda) del
+    "$" de Precio unitario y de Total de cada renglón, más la del "$" de
+    la línea "Total:" final si esa página la tiene. Se basa en ubicar los
+    caracteres "$" reales dentro de cada banda de fila (mismo criterio
+    que _analizar_pdf_original usa para una sola fila de muestra, acá
+    generalizado a todas), así el overlay queda pegado exactamente donde
+    el formulario original tiene sus "$.........." en blanco."""
+    paginas = []
+    with pdfplumber.open(pdf_path) as pdf:
+        for page in pdf.pages:
+            palabras = page.extract_words()
+            celdas = []
+            total = None
+            for top, bottom in bandas_de_filas(page):
+                en_banda = [w for w in palabras if top - 0.5 <= w["top"] < bottom - 0.5]
+                rg_texto = "".join(w["text"] for w in en_banda if w["x0"] < COL_RG_MAX)
+                dolares = sorted(
+                    (c for c in page.chars if top - 1 <= c["top"] <= bottom + 1 and c["text"] == "$"),
+                    key=lambda c: c["x0"],
+                )
+                if rg_texto.isdigit() and len(dolares) >= 2:
+                    celdas.append(
+                        {
+                            "rg": rg_texto,
+                            "precio": dolares[0],
+                            "total": dolares[1],
+                        }
+                    )
+                elif not rg_texto.isdigit() and dolares and any(
+                    w["text"] == "Total:" for w in en_banda
+                ):
+                    total = dolares[0]
+            paginas.append(
+                {
+                    "ancho": page.width,
+                    "alto": page.height,
+                    "celdas": celdas,
+                    "total": total,
+                }
+            )
+    return paginas
+
+
+def _generar_overlay_precios(pdf_original_path: Path, filas: list, info: dict, salida: Path):
+    """Genera el F.41 editado superponiendo los precios sobre las páginas
+    REALES del original (ver criterio en el docstring del módulo). Por
+    cada "$.........." en blanco del original: tapa esa franja con un
+    rectángulo blanco (mismo alto que la fila, para cubrir también los
+    puntos de relleno existentes) y escribe encima el precio editado con
+    el mismo criterio visual que usa la reconstrucción (_celda_precio)."""
+    anchos_columnas = _anchos_columnas(info)
+    ancho_precio_unitario, ancho_total = anchos_columnas[4], anchos_columnas[5]
+    borde_derecho = info["borde_derecho"]
+
+    items_por_rg = {_texto(f.get("rg")): f for f in filas}
+
+    total_general = 0.0
+    for fila in filas:
+        total = fila.get("total")
+        if total not in (None, ""):
+            total_general += float(total)
+
+    mapa = _mapa_precios_original(pdf_original_path)
+    buffer_overlay = io.BytesIO()
+    cv = canvas_module.Canvas(buffer_overlay)
+    for pagina in mapa:
+        cv.setPageSize((pagina["ancho"], pagina["alto"]))
+        alto = pagina["alto"]
+
+        def _tapar_y_escribir(x0, top, bottom, ancho_columna, texto, negrita=False):
+            # +0.3/-0.3: un pelo de margen para cubrir también el borde
+            # superior/inferior de los puntos de relleno sin invadir la
+            # fila de al lado.
+            cv.setFillColorRGB(1, 1, 1)
+            cv.rect(x0 - 1, alto - bottom - 1, ancho_columna + 1, (bottom - top) + 2, fill=1, stroke=0)
+            cv.setFillColorRGB(0, 0, 0)
+            cv.setFont("Helvetica-Bold" if negrita else FUENTE_TABLA, TAMANO_TABLA)
+            cv.drawString(x0, alto - bottom, texto)
+
+        for celda in pagina["celdas"]:
+            fila = items_por_rg.get(celda["rg"])
+            if fila is None:
+                continue
+            d_precio, d_total = celda["precio"], celda["total"]
+            _tapar_y_escribir(
+                d_precio["x0"], d_precio["top"], d_precio["bottom"], ancho_precio_unitario,
+                _celda_precio(fila.get("precio_unitario"), ancho_precio_unitario),
+            )
+            _tapar_y_escribir(
+                d_total["x0"], d_total["top"], d_total["bottom"], ancho_total,
+                _celda_precio(fila.get("total"), ancho_total),
+            )
+
+        if pagina["total"] is not None:
+            d = pagina["total"]
+            # El "Total:" en sí ya está impreso en el original (parte del
+            # membrete/texto fijo que no se toca) -- acá solo se
+            # superpone el "$.........." que sigue, igual que en cada
+            # renglón de ítem. Sin esto quedaba "Total: Total: $..." por
+            # duplicado.
+            ancho_total_general = borde_derecho - d["x0"]
+            _tapar_y_escribir(
+                d["x0"], d["top"], d["bottom"], ancho_total_general,
+                _celda_precio(total_general, ancho_total_general), negrita=True,
+            )
+
+        cv.showPage()
+    cv.save()
+    buffer_overlay.seek(0)
+
+    lector_original = PdfReader(str(pdf_original_path))
+    lector_overlay = PdfReader(buffer_overlay)
+    writer = PdfWriter()
+    for pagina_original, pagina_overlay in zip(lector_original.pages, lector_overlay.pages):
+        pagina_original.merge_page(pagina_overlay)
+        writer.add_page(pagina_original)
+
+    with open(salida, "wb") as f:
+        writer.write(f)
+
+
+def _generar_reconstruccion(pdf_original_path: Path, filas: list, salida: Path):
+    """Reconstruye la tabla de ítems de cero (ver criterio en el
+    docstring del módulo: se usa cuando los renglones ya no coinciden con
+    el original). `filas`: lista de dicts con "rg", "codigo",
+    "descripcion", "cantidad", "precio_unitario", "total" (los valores de
+    precio/total ya vienen resueltos del frontend, no se recalculan acá).
     """
     info = _analizar_pdf_original(pdf_original_path)
     ancho, alto = info["ancho"], info["alto"]
@@ -416,3 +599,31 @@ def generar_f41_editado(pdf_original_path: Path, filas: list, salida: Path):
         Paragraph("FIRMA Y SELLO DEL PROPONENTE", estilo_firma),
     ]
     doc.build(story)
+
+
+def generar_f41_editado(pdf_original_path: Path, filas: list, salida: Path):
+    """`filas`: lista de dicts con "rg", "codigo", "descripcion",
+    "cantidad", "precio_unitario", "total" (los valores de precio/total
+    ya vienen resueltos del frontend, no se recalculan acá). Elige entre
+    superposición (preferido: paginación idéntica al original) y
+    reconstrucción (respaldo, si la lista de renglones ya no coincide con
+    la original) -- ver criterio completo en el docstring del módulo."""
+    try:
+        items_originales = extraer_pdf_completo(pdf_original_path)
+    except Exception:
+        items_originales = None
+
+    if items_originales and _filas_coinciden_con_original(filas, items_originales):
+        info = _analizar_pdf_original(pdf_original_path)
+        try:
+            _generar_overlay_precios(pdf_original_path, filas, info, salida)
+            return
+        except Exception:
+            # Si algo falla superponiendo (PDF original con una
+            # estructura rara que no se pudo prever), no se pierde la
+            # generación entera: se cae al método de reconstrucción, que
+            # es más tolerante porque no depende de encontrar posiciones
+            # exactas en el original.
+            pass
+
+    _generar_reconstruccion(pdf_original_path, filas, salida)

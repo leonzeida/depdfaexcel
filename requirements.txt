@@ -4,3 +4,4 @@ openpyxl
 gunicorn
 psycopg[binary]
 reportlab
+pypdf
