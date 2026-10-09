@@ -54,8 +54,16 @@ INSERT INTO precios_referencia (codigo, descripcion, ultimo_precio, porcentaje, 
 VALUES (%s, %s, %s, %s, %s, %s)
 ON CONFLICT (codigo, descripcion) DO UPDATE SET
     ultimo_precio = EXCLUDED.ultimo_precio,
-    porcentaje = EXCLUDED.porcentaje,
-    mejor_proveedor = EXCLUDED.mejor_proveedor,
+    -- porcentaje/mejor_proveedor sí usan COALESCE (a diferencia de
+    -- ultimo_precio/actualizado, que siempre se pisan con el dato más
+    -- nuevo): desde que "Guardar resultados" en Precios adjudicados
+    -- también actualiza esta tabla con el precio REAL adjudicado del
+    -- F.43 (ver guardar_resultado_preadjudicacion en app.py), ese
+    -- guardado no conoce el "porcentaje" que se calculó en el
+    -- comparador -- sin COALESCE, pisaría ese dato con NULL en vez de
+    -- dejarlo como estaba.
+    porcentaje = COALESCE(EXCLUDED.porcentaje, precios_referencia.porcentaje),
+    mejor_proveedor = COALESCE(EXCLUDED.mejor_proveedor, precios_referencia.mejor_proveedor),
     actualizado = EXCLUDED.actualizado;
 """
 

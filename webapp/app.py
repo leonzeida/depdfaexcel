@@ -562,6 +562,26 @@ def guardar_resultado_preadjudicacion():
             error="No se pudo guardar en la base de historial. Probá de nuevo en un momento."
         ), 502
 
+    # El "Último precio" que ve el comparador (Comparar costos) pasa a ser
+    # el precio REAL adjudicado en el F.43, no solo lo que Zeid cotizó: es
+    # el dato más confiable que existe para saber a qué precio competir la
+    # próxima vez, se haya ganado ese renglón o no. No falla el guardado
+    # si esto no anda (ver mismo criterio en /guardar_referencia): el
+    # historial ya quedó guardado arriba, que es lo importante.
+    try:
+        guardar_precios_referencia([
+            {
+                "codigo": it["codigo"],
+                "descripcion": it["descripcion"],
+                "ultimo_precio": it["precio_adjudicado"],
+                "mejor_proveedor": it["proveedor_ganador"],
+            }
+            for it in items_resultado
+            if it["precio_adjudicado"] is not None
+        ])
+    except ErrorPreciosReferencia as exc:
+        print(f"[precios-referencia] Fallo actualizando desde adjudicación: {exc}", file=sys.stderr, flush=True)
+
     return jsonify(ok=True, cantidad=len(items_resultado))
 
 
