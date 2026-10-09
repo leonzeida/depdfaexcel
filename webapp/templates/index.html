@@ -1706,6 +1706,55 @@
       });
     });
 
+    // Mismo criterio de colores que "Precio final" en Comparar costos,
+    // pero acá la referencia es el Precio adjudicado de ESTE renglón (lo
+    // que efectivamente se pagó/cobró) en vez del precio histórico de la
+    // base: P. Venta queda verde si el padre lo calcula por debajo de ese
+    // precio adjudicado (hubiera sido competitivo) y rojo si queda igual
+    // o por arriba. En los renglones que ganó Zeid Medical se respeta el
+    // amarillo mientras no se haya cargado Costo/% todavía -- recién
+    // cuando se completan esos datos, esa celda puntual pasa a mostrar su
+    // propio color en vez del amarillo de "ganador".
+    function algunCostoCargadoPreadjudicacion(fila) {
+      return parsePesos(worksheetPreadjudicacion.getValue('G' + fila, true)) !== null
+        || parsePesos(worksheetPreadjudicacion.getValue('H' + fila, true)) !== null;
+    }
+
+    function actualizarColorPVenta(fila, esZeid) {
+      const cel = 'I' + fila;
+      if (!algunCostoCargadoPreadjudicacion(fila)) {
+        if (!esZeid) pintarCelda(worksheetPreadjudicacion, cel, '', '');
+        return;
+      }
+      const precioAdjudicado = parsePesos(worksheetPreadjudicacion.getValue('E' + fila, true));
+      const venta = parsePesos(worksheetPreadjudicacion.getValue(cel, true));
+      if (precioAdjudicado === null || venta === null) {
+        if (!esZeid) pintarCelda(worksheetPreadjudicacion, cel, '', '');
+        return;
+      }
+      if (venta < precioAdjudicado) {
+        pintarCelda(worksheetPreadjudicacion, cel, '#d4f4dd', '#1e7a46');
+      } else {
+        pintarCelda(worksheetPreadjudicacion, cel, '#fbdcda', '#a3231c');
+      }
+    }
+
+    const recalcularColoresPVentaPreadjudicacion = () => {
+      items.forEach((item, indice) => {
+        const esZeid = (item.proveedor || '').toUpperCase().includes('ZEID MEDICAL');
+        actualizarColorPVenta(indice + 1, esZeid);
+      });
+    };
+    recalcularColoresPVentaPreadjudicacion();
+    envoltorio.addEventListener('keyup', recalcularColoresPVentaPreadjudicacion);
+    envoltorio.addEventListener('blur', recalcularColoresPVentaPreadjudicacion, true);
+    envoltorio.addEventListener('click', recalcularColoresPVentaPreadjudicacion);
+
+    const ayudaPreadjudicacion = document.createElement('p');
+    ayudaPreadjudicacion.className = 'ayuda-formulas';
+    ayudaPreadjudicacion.textContent = 'P. Venta = Costo + ese % de margen. Aparece en verde si queda por debajo del Precio adjudicado de esa fila (hubiera sido competitivo) y en rojo si queda igual o por arriba.';
+    zonaTablaPreadjudicacion.appendChild(ayudaPreadjudicacion);
+
     botonExportarPreadjudicacion.disabled = false;
     botonNotaPedidoPreadjudicacion.disabled = false;
     botonGuardarResultadoPreadjudicacion.disabled = false;
