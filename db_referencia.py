@@ -53,18 +53,29 @@ _UPSERT = """
 INSERT INTO precios_referencia (codigo, descripcion, ultimo_precio, porcentaje, mejor_proveedor, actualizado)
 VALUES (%s, %s, %s, %s, %s, %s)
 ON CONFLICT (codigo, descripcion) DO UPDATE SET
-    ultimo_precio = EXCLUDED.ultimo_precio,
-    -- porcentaje/mejor_proveedor sí usan COALESCE (a diferencia de
-    -- ultimo_precio/actualizado, que siempre se pisan con el dato más
-    -- nuevo): desde que "Guardar resultados" en Precios adjudicados
-    -- también actualiza esta tabla con el precio REAL adjudicado del
-    -- F.43 (ver guardar_resultado_preadjudicacion en app.py), ese
-    -- guardado no conoce el "porcentaje" que se calculó en el
-    -- comparador -- sin COALESCE, pisaría ese dato con NULL en vez de
-    -- dejarlo como estaba.
-    porcentaje = COALESCE(EXCLUDED.porcentaje, precios_referencia.porcentaje),
-    mejor_proveedor = COALESCE(EXCLUDED.mejor_proveedor, precios_referencia.mejor_proveedor),
-    actualizado = EXCLUDED.actualizado;
+    -- "actualizado" ya no es "cuándo se tocó el botón Guardar" -- es la
+    -- fecha de APERTURA real del documento (F.41 o F.43) de donde salió
+    -- ese precio (ver guardar_precios_referencia). Por eso el pisado ya
+    -- no es incondicional: si lo que ya había guardado es de una
+    -- licitación más reciente que la que se acaba de cargar (ej. el
+    -- padre carga un F.43 atrasado después de uno más nuevo), se
+    -- mantiene el dato más nuevo en vez de taparlo con uno viejo. Los 4
+    -- campos se mueven juntos (mismo CASE) porque son "un mismo precio
+    -- de un mismo documento" -- antes mezclaban criterios distintos
+    -- (ultimo_precio/actualizado se pisaban siempre, porcentaje/
+    -- mejor_proveedor sólo con COALESCE).
+    ultimo_precio = CASE
+        WHEN precios_referencia.actualizado IS NULL OR EXCLUDED.actualizado >= precios_referencia.actualizado
+        THEN EXCLUDED.ultimo_precio ELSE precios_referencia.ultimo_precio END,
+    porcentaje = CASE
+        WHEN precios_referencia.actualizado IS NULL OR EXCLUDED.actualizado >= precios_referencia.actualizado
+        THEN COALESCE(EXCLUDED.porcentaje, precios_referencia.porcentaje) ELSE precios_referencia.porcentaje END,
+    mejor_proveedor = CASE
+        WHEN precios_referencia.actualizado IS NULL OR EXCLUDED.actualizado >= precios_referencia.actualizado
+        THEN COALESCE(EXCLUDED.mejor_proveedor, precios_referencia.mejor_proveedor) ELSE precios_referencia.mejor_proveedor END,
+    actualizado = CASE
+        WHEN precios_referencia.actualizado IS NULL OR EXCLUDED.actualizado >= precios_referencia.actualizado
+        THEN EXCLUDED.actualizado ELSE precios_referencia.actualizado END;
 """
 
 # Una fila por (item, licitacion), que se va completando en 3 etapas a
@@ -247,14 +258,21 @@ def leer_precios_referencia() -> dict:
     return precios
 
 
-def guardar_precios_referencia(items: list):
+def guardar_precios_referencia(items: list, fecha_documento=None):
     """Por cada {"codigo", "descripcion", "ultimo_precio", "porcentaje",
     "mejor_proveedor"}, hace un upsert en la tabla (crea la fila si no
-    existía, o actualiza los datos si ya existía)."""
+    existía, o actualiza los datos si ya existía). `fecha_documento`: la
+    fecha de APERTURA real del documento (F.41 o F.43) del que salen
+    estos items -- un solo valor para todo el batch, no por item, porque
+    todos vienen del mismo documento. El UPSERT (_UPSERT) sólo pisa un
+    precio ya guardado si esta fecha es igual o más nueva que la que ya
+    había, así un documento cargado tarde no tapa uno más reciente. Si
+    no se pasa nada (o no se pudo parsear la fecha del documento), cae a
+    "hoy" como antes."""
     if not items:
         return
 
-    hoy = datetime.now(ZONA_HORARIA_ARGENTINA).date()
+    fecha = fecha_documento or datetime.now(ZONA_HORARIA_ARGENTINA).date()
     filas = [
         (
             item["codigo"],
@@ -262,7 +280,7 @@ def guardar_precios_referencia(items: list):
             item["ultimo_precio"],
             item.get("porcentaje"),
             item.get("mejor_proveedor"),
-            hoy,
+            fecha,
         )
         for item in items
     ]

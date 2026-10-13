@@ -822,8 +822,12 @@
       item.descripcion,
       item.cantidad,
       ultimo, // Último precio (de solo lectura, historial)
-      formatearFecha(item.actualizado), // Fecha del último guardado (de solo lectura)
-      item.mejor_proveedor || '', // Proveedor ganador la última vez que se guardó (de solo lectura)
+      // Fecha de APERTURA del documento (F.41 u F.43) de donde salió
+      // este precio -- no la fecha en que se tocó "Guardar". Por eso un
+      // guardado de un documento viejo no pisa el precio de uno más
+      // nuevo (ver _UPSERT/guardar_precios_referencia en db_referencia.py).
+      formatearFecha(item.actualizado), // (de solo lectura)
+      item.mejor_proveedor || '', // Proveedor ganador del documento más reciente (de solo lectura)
       ultimo, // Precio de referencia (editable, arranca igual al último precio, no se guarda)
       '', '', '', '',
       '=MIN(I' + fila + ':L' + fila + ')',

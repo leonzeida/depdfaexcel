@@ -64,8 +64,11 @@ RE_EXPEDIENTE_F43 = re.compile(r"EXPTE N[º°]\s*[A-Z]?-?(\d+/\d+)")
 RE_CONTRATACION_F43 = re.compile(r"CONTRATACI[ÓO]N DIRECTA N[º°]\s*:?\s*(\d+/\d+)")
 # La fecha/hora de apertura viene en prosa, no como "APERTURA: dd/mm/aaaa"
 # igual que en el F.41 (ej. "a los TREINTA (30) días del mes de
-# SEPTIEMBRE de 2026, siendo las 09:55 horas").
-RE_FECHA_F43 = re.compile(r"a los .+?\((\d{1,2})\)\s*d[ií]as del mes de (\w+) de (\d{4})", re.IGNORECASE)
+# SEPTIEMBRE de 2026, siendo las 09:55 horas"). El "de"/"del" antes del
+# año varía según el acta (confirmado con actas reales: "...SEPTIEMBRE
+# de 2026" en unas, "...SEPTIEMBRE del 2026" en otras) -- "del?" solo
+# contempla esa variación, no afecta nada más.
+RE_FECHA_F43 = re.compile(r"a los .+?\((\d{1,2})\)\s*d[ií]as del mes de (\w+) del?\s+(\d{4})", re.IGNORECASE)
 RE_HORA_F43 = re.compile(r"siendo las (\d{1,2}:\d{2}) horas", re.IGNORECASE)
 MESES_ES = {
     "ENERO": 1, "FEBRERO": 2, "MARZO": 3, "ABRIL": 4, "MAYO": 5, "JUNIO": 6,

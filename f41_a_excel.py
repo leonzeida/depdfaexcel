@@ -44,6 +44,19 @@ RE_APERTURA = re.compile(r"APERTURA:\s*(\S+)")
 RE_HORA = re.compile(r"HORA:\s*([\d:]+)")
 
 
+def parsear_fecha_apertura(apertura):
+    """"dd/mm/aaaa" -> date, o None si viene vacía o con un formato que
+    no se pudo reconocer. f43_preadjudicacion.py normaliza su propia
+    fecha de apertura (que en el PDF original viene en prosa, "a los
+    XX días del mes de ... de ...") a este mismo formato de string a
+    propósito, así que este único parser sirve para los encabezados de
+    F.41 y de F.43 por igual."""
+    try:
+        return datetime.strptime(apertura, "%d/%m/%Y").date()
+    except (TypeError, ValueError):
+        return None
+
+
 def bandas_de_filas(page):
     """Detecta las bandas verticales (top, bottom) de cada fila de la
     tabla a partir de los segmentos del borde izquierdo."""

@@ -32,6 +32,7 @@ from f41_a_excel import (  # noqa: E402
     extraer_pdf_completo,
     linea_de_pedido,
     nombre_archivo_notas_pedido,
+    parsear_fecha_apertura,
 )
 from db_referencia import (
     ErrorPreciosReferencia,
@@ -266,8 +267,13 @@ def guardar_referencia():
     if not items_validos:
         return jsonify(error="No hay ningún precio para guardar."), 400
 
+    # La fecha de apertura real del F.41 (no la fecha en que se tocó
+    # "Guardar"): decide si este precio pisa o no al que ya hubiera en
+    # precios_referencia para el mismo ítem (ver guardar_precios_referencia).
+    fecha_documento = parsear_fecha_apertura(encabezado.get("apertura"))
+
     try:
-        guardar_precios_referencia(items_validos)
+        guardar_precios_referencia(items_validos, fecha_documento=fecha_documento)
         # El historial de licitaciones es una ampliación aparte de
         # precios_referencia (no la reemplaza): si falla no se corta el
         # guardado principal, que es el que ya usaba el comparador.
@@ -578,16 +584,23 @@ def guardar_resultado_preadjudicacion():
     # si esto no anda (ver mismo criterio en /guardar_referencia): el
     # historial ya quedó guardado arriba, que es lo importante.
     try:
-        guardar_precios_referencia([
-            {
-                "codigo": it["codigo"],
-                "descripcion": it["descripcion"],
-                "ultimo_precio": it["precio_adjudicado"],
-                "mejor_proveedor": it["proveedor_ganador"],
-            }
-            for it in items_resultado
-            if it["precio_adjudicado"] is not None
-        ])
+        guardar_precios_referencia(
+            [
+                {
+                    "codigo": it["codigo"],
+                    "descripcion": it["descripcion"],
+                    "ultimo_precio": it["precio_adjudicado"],
+                    "mejor_proveedor": it["proveedor_ganador"],
+                }
+                for it in items_resultado
+                if it["precio_adjudicado"] is not None
+            ],
+            # Fecha de apertura real del F.43 (esta ruta ya re-parseó el
+            # PDF arriba, "encabezado" es 100% del servidor): si este
+            # acta es más vieja que lo que ya hubiera guardado para
+            # algún ítem, no lo pisa (ver guardar_precios_referencia).
+            fecha_documento=parsear_fecha_apertura(encabezado.get("apertura")),
+        )
     except ErrorPreciosReferencia as exc:
         print(f"[precios-referencia] Fallo actualizando desde adjudicación: {exc}", file=sys.stderr, flush=True)
 
