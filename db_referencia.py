@@ -22,7 +22,7 @@ import psycopg
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
-from f41_a_excel import FMT_MONEDA_ARS, clave_item
+from f41_a_excel import FMT_MONEDA_ARS, clave_item, parsear_fecha_apertura
 
 ZONA_HORARIA_ARGENTINA = ZoneInfo("America/Argentina/Buenos_Aires")
 
@@ -307,15 +307,19 @@ def guardar_oferta_historial(items: list, encabezado: dict):
     """Guarda la etapa 1 (lo que Zeid ofertó) del historial de
     licitaciones. `items`: lista de {"codigo", "descripcion", "cantidad",
     "precio_ofertado", "porcentaje_ofertado", "proveedor_elegido",
-    "renglon"?}. `encabezado`: {"expediente", "contratacion"} del F.41
-    cargado. No hace nada si no hay expediente (no se puede vincular a
-    una licitación)."""
+    "renglon"?}. `encabezado`: {"expediente", "contratacion", "apertura"}
+    del F.41 cargado. No hace nada si no hay expediente (no se puede
+    vincular a una licitación)."""
     expediente = (encabezado or {}).get("expediente") or ""
     if not items or not expediente:
         return
 
     contratacion = (encabezado or {}).get("contratacion")
-    hoy = datetime.now(ZONA_HORARIA_ARGENTINA).date()
+    # "fecha_oferta" es la fecha de APERTURA real del F.41, no el día en
+    # que se tocó "Guardar" -- mismo criterio que precios_referencia (ver
+    # guardar_precios_referencia). Si no se pudo extraer/parsear, cae a
+    # hoy como antes.
+    fecha_oferta = parsear_fecha_apertura(encabezado.get("apertura")) or datetime.now(ZONA_HORARIA_ARGENTINA).date()
 
     conn = None
     try:
@@ -339,7 +343,7 @@ def guardar_oferta_historial(items: list, encabezado: dict):
                     item.get("precio_ofertado"),
                     item.get("porcentaje_ofertado"),
                     item.get("proveedor_elegido"),
-                    hoy,
+                    fecha_oferta,
                 ),
             )
         cur.close()
@@ -361,13 +365,19 @@ def guardar_resultado_adjudicacion(items: list, encabezado: dict):
     {"codigo", "descripcion", "cantidad", "gano_zeid",
     "precio_adjudicado", "proveedor_ganador", "costo_real"?,
     "precio_venta_real"?, "renglon"?}. `encabezado`: {"expediente",
-    "contratacion"} del F.43 cargado."""
+    "contratacion", "apertura"} del F.43 cargado."""
     expediente = (encabezado or {}).get("expediente") or ""
     if not items or not expediente:
         return
 
     contratacion = (encabezado or {}).get("contratacion")
     hoy = datetime.now(ZONA_HORARIA_ARGENTINA).date()
+    # "fecha_adjudicacion" es la fecha de APERTURA real del F.43, no el
+    # día en que se tocó "Guardar resultados" (mismo criterio que
+    # fecha_oferta arriba). "fecha_costo" sí se deja en "hoy": no es la
+    # fecha de ningún documento, es el día en que el padre cargó el costo
+    # real a mano.
+    fecha_adjudicacion = parsear_fecha_apertura(encabezado.get("apertura")) or hoy
 
     conn = None
     try:
@@ -392,7 +402,7 @@ def guardar_resultado_adjudicacion(items: list, encabezado: dict):
                     item.get("gano_zeid"),
                     item.get("precio_adjudicado"),
                     item.get("proveedor_ganador"),
-                    hoy,
+                    fecha_adjudicacion,
                     item.get("costo_real"),
                     item.get("precio_venta_real"),
                     hoy if tiene_costo else None,
