@@ -620,15 +620,35 @@ def escribir_planilla_comparacion_vacia(salida: Path, cantidad_filas: int = 10):
     wb.save(salida)
 
 
+def normalizar_descripcion(descripcion) -> str:
+    """Normaliza una descripción para poder reconocer "el mismo ítem"
+    aunque dos documentos la hayan escrito un poco distinto -- mismo
+    criterio que ya usaba db_referencia.py para historial_licitaciones
+    (ahí vivía como _normalizar_descripcion), movido acá para que
+    clave_item() lo use también: confirmado con datos reales que un F.41
+    nuevo puede escribir "ENALAPRIL 10 MG COMPRIMIDO X 30" donde un F.41
+    anterior decía "ENALAPRIL 10 mg. COMPRIMIDO" (sin el "X 30", mg en
+    minúscula) -- sin normalizar, precios_referencia los trataba como
+    dos ítems distintos y el comparador no encontraba el precio ya
+    guardado para la mayoría de los renglones de un F.41 real (confirmado:
+    93 de 100 ítems de un expediente real no encontraban nada guardado).
+    Saca las notas "(Obs.: ...)", colapsa espacios y pasa todo a
+    mayúsculas."""
+    texto = re.sub(r"\(Obs\.:.*?\)", "", descripcion or "", flags=re.IGNORECASE)
+    texto = re.sub(r"\s+", " ", texto).strip().upper()
+    return texto
+
+
 def clave_item(codigo, descripcion) -> tuple:
     # El código del F.41 es un código de categoría, no de producto: el
     # mismo código puede repetirse en varios renglones con descripciones
     # completamente distintas (confirmado con datos reales: "4.01.008.066"
     # aparece en 4 items distintos de un mismo PDF). Por eso la clave para
-    # identificar "el mismo ítem" entre licitaciones es código + descripción,
-    # no el código solo. La usa db_referencia.py para el comparador de
+    # identificar "el mismo ítem" entre licitaciones es código +
+    # descripción (normalizada, ver normalizar_descripcion), no el
+    # código solo. La usa db_referencia.py para el comparador de
     # precios.
-    return (str(codigo), (descripcion or "").strip())
+    return (str(codigo), normalizar_descripcion(descripcion))
 
 
 def procesar(pdf_path: Path):

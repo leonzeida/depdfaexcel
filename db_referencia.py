@@ -22,7 +22,7 @@ import psycopg
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
-from f41_a_excel import FMT_MONEDA_ARS, clave_item, parsear_fecha_apertura
+from f41_a_excel import FMT_MONEDA_ARS, clave_item, normalizar_descripcion, parsear_fecha_apertura
 
 ZONA_HORARIA_ARGENTINA = ZoneInfo("America/Argentina/Buenos_Aires")
 
@@ -210,30 +210,28 @@ def _resolver_clave_existente(cur, expediente, renglon, codigo, descripcion_norm
     return (fila[0], fila[1]) if fila else (codigo, descripcion_normalizada)
 
 
-def _normalizar_descripcion(descripcion: str) -> str:
-    """Clave de match entre documentos: el mismo item puede venir con la
-    descripcion formateada un poco distinto segun si se extrajo de un
-    F.41 o de un F.43 (espacios, como se agrega la nota "Obs.:") -
-    confirmado comparando el mismo expediente en los dos formatos. Sin
-    normalizar, la etapa 1 (guardada desde el F.41) y la etapa 2
-    (guardada desde el F.43) de un mismo item terminarian en filas
-    distintas en vez de completar la misma."""
-    texto = re.sub(r"\(Obs\.:.*?\)", "", descripcion or "", flags=re.IGNORECASE)
-    texto = re.sub(r"\s+", " ", texto).strip().upper()
-    return texto
-
-
 def leer_precios_referencia() -> dict:
-    """Devuelve {(codigo, descripcion): {"ultimo_precio": float|None,
+    """Devuelve {(codigo, descripcion_normalizada): {"ultimo_precio": float|None,
     "porcentaje": float|None, "actualizado": str|None (fecha ISO),
-    "mejor_proveedor": str|None}}."""
+    "mejor_proveedor": str|None}}.
+
+    La tabla todavía guarda la descripción tal cual vino (texto crudo,
+    sin normalizar) -- distintos documentos pueden haber guardado "el
+    mismo" ítem real con un texto apenas distinto (mayúsculas, notas
+    "Obs.:", un "X 30" de más), así que puede haber más de una fila
+    cruda para la misma clave normalizada (clave_item ya normaliza, ver
+    f41_a_excel.py). Se resuelve acá, en memoria, en vez de migrar la
+    tabla: se leen todas ordenadas por fecha ascendente y se arma el
+    diccionario en ese orden, así si dos filas colisionan en la misma
+    clave normalizada, la que se guarda al final (la de fecha más
+    reciente) es la que queda."""
     conn = None
     try:
         conn = _conectar()
         cur = conn.cursor()
         cur.execute(
             "SELECT codigo, descripcion, ultimo_precio, porcentaje, actualizado, mejor_proveedor "
-            "FROM precios_referencia;"
+            "FROM precios_referencia ORDER BY actualizado ASC NULLS FIRST;"
         )
         filas = cur.fetchall()
         cur.close()
@@ -328,7 +326,7 @@ def guardar_oferta_historial(items: list, encabezado: dict):
         for item in items:
             renglon = item.get("renglon")
             codigo, descripcion_normalizada = _resolver_clave_existente(
-                cur, expediente, renglon, item["codigo"], _normalizar_descripcion(item["descripcion"])
+                cur, expediente, renglon, item["codigo"], normalizar_descripcion(item["descripcion"])
             )
             cur.execute(
                 _UPSERT_OFERTA,
@@ -386,7 +384,7 @@ def guardar_resultado_adjudicacion(items: list, encabezado: dict):
         for item in items:
             renglon = item.get("renglon")
             codigo, descripcion_normalizada = _resolver_clave_existente(
-                cur, expediente, renglon, item["codigo"], _normalizar_descripcion(item["descripcion"])
+                cur, expediente, renglon, item["codigo"], normalizar_descripcion(item["descripcion"])
             )
             tiene_costo = item.get("costo_real") is not None or item.get("precio_venta_real") is not None
             cur.execute(
