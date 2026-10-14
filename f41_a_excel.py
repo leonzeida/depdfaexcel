@@ -550,6 +550,76 @@ def escribir_comparacion_precios_excel(titulo: str, filas: list, salida: Path):
     wb.save(salida)
 
 
+def escribir_planilla_comparacion_vacia(salida: Path, cantidad_filas: int = 10):
+    """Genera una planilla de comparación de precios VACÍA (sin cargar
+    ningún F.41 antes): mismas 18 columnas, mismas fórmulas y mismo
+    resaltado condicional que "Descargar esta comparación como Excel"
+    (ver escribir_comparacion_precios_excel), para completar directo a
+    mano. Única diferencia real: en la grilla de la web "Proveedor
+    ganador" lo calcula el JavaScript de la página mirando cuál de
+    Proveedor 1-4 dio el precio más bajo -- acá, al no haber página
+    detrás, se arma como fórmula de Excel (INDEX/MATCH contra el
+    encabezado de esas columnas) para que siga completándose sola."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Comparacion"
+
+    ws.merge_cells("A1:R1")
+    ws["A1"] = "Comparación de precios - planilla en blanco"
+    ws["A1"].font = Font(bold=True, size=13, color="000000")
+    ws["A1"].alignment = Alignment(horizontal="center")
+    ws["A1"].fill = PatternFill("solid", fgColor="D4EA6B")
+
+    fuente_encabezado = Font(bold=True, color="000000")
+    relleno_encabezado = PatternFill("solid", fgColor="D4EA6B")
+    centrado = Alignment(horizontal="center")
+
+    for col, titulo_columna in enumerate(ENCABEZADOS_COMPARACION, start=1):
+        c = ws.cell(row=2, column=col, value=titulo_columna)
+        c.font = fuente_encabezado
+        c.fill = relleno_encabezado
+        c.alignment = centrado
+
+    # Mismas columnas de moneda que la versión con datos.
+    columnas_moneda = (5, 8, 9, 10, 11, 12, 13, 16, 17, 18)
+    fila_excel = 3
+    for _ in range(cantidad_filas):
+        formulas = {
+            13: f"=MIN(I{fila_excel}:L{fila_excel})",  # Mejor precio nuevo
+            14: f'=IFERROR(INDEX($I$2:$L$2,MATCH(M{fila_excel},I{fila_excel}:L{fila_excel},0)),"")',  # Proveedor ganador
+            16: f"=M{fila_excel}*((O{fila_excel}+100)/100)",  # Precio final
+            17: f"=D{fila_excel}*P{fila_excel}",  # Total de venta
+            18: f"=D{fila_excel}*M{fila_excel}",  # Total de costos
+        }
+        for col in range(1, 19):
+            c = ws.cell(row=fila_excel, column=col, value=formulas.get(col))
+            c.alignment = Alignment(horizontal="left", wrap_text=True) if col == 3 else centrado
+            if col in columnas_moneda:
+                c.number_format = FMT_MONEDA_ARS
+        fila_excel += 1
+    ultima_fila = fila_excel - 1
+
+    verde = PatternFill(start_color="D4F4DD", end_color="D4F4DD", fill_type="solid")
+    rojo = PatternFill(start_color="FBDCDA", end_color="FBDCDA", fill_type="solid")
+    rango = f"P3:P{ultima_fila}"
+    ws.conditional_formatting.add(
+        rango, FormulaRule(formula=["P3<H3"], fill=verde, font=Font(color="1E7A46"))
+    )
+    ws.conditional_formatting.add(
+        rango, FormulaRule(formula=["P3>=H3"], fill=rojo, font=Font(color="A3231C"))
+    )
+
+    anchos = {
+        "A": 10, "B": 14, "C": 45, "D": 10, "E": 13, "F": 13, "G": 16,
+        "H": 15, "I": 12, "J": 12, "K": 12, "L": 12, "M": 15, "N": 16,
+        "O": 8, "P": 13, "Q": 15, "R": 15,
+    }
+    for letra, ancho in anchos.items():
+        ws.column_dimensions[letra].width = ancho
+
+    wb.save(salida)
+
+
 def clave_item(codigo, descripcion) -> tuple:
     # El código del F.41 es un código de categoría, no de producto: el
     # mismo código puede repetirse en varios renglones con descripciones

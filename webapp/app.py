@@ -25,6 +25,7 @@ from f41_a_excel import (  # noqa: E402
     clave_item,
     escribir_comparacion_precios_excel,
     escribir_notas_pedido,
+    escribir_planilla_comparacion_vacia,
     escribir_planilla_trabajo,
     expediente_slug,
     extraer_encabezado,
@@ -322,6 +323,21 @@ def exportar_comparacion():
         datos = base64.b64encode(salida.read_bytes()).decode("ascii")
 
     return jsonify(archivos=[{"etiqueta": "Comparación", "nombre": salida.name, "datos": datos}])
+
+
+@app.route("/exportar_planilla_comparacion_vacia", methods=["GET"])
+def exportar_planilla_comparacion_vacia():
+    with tempfile.TemporaryDirectory() as tmp:
+        salida = Path(tmp) / "Comparacion de precios (en blanco).xlsx"
+        try:
+            escribir_planilla_comparacion_vacia(salida)
+        except Exception as exc:
+            print(f"[exportar-planilla-vacia] Fallo generando el Excel: {exc}", file=sys.stderr, flush=True)
+            return jsonify(error="No se pudo generar la planilla vacía."), 500
+
+        datos = base64.b64encode(salida.read_bytes()).decode("ascii")
+
+    return jsonify(archivos=[{"etiqueta": "Planilla en blanco", "nombre": salida.name, "datos": datos}])
 
 
 @app.route("/items_para_editor", methods=["POST"])
