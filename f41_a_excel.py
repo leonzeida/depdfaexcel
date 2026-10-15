@@ -602,11 +602,19 @@ def escribir_planilla_comparacion_vacia(salida: Path, cantidad_filas: int = 10):
     verde = PatternFill(start_color="D4F4DD", end_color="D4F4DD", fill_type="solid")
     rojo = PatternFill(start_color="FBDCDA", end_color="FBDCDA", fill_type="solid")
     rango = f"P3:P{ultima_fila}"
+    # A diferencia de escribir_comparacion_precios_excel (que sólo escribe
+    # filas que ya tienen datos reales), acá se pre-crean filas en blanco:
+    # sin el chequeo "H3<>\"\"", una fila sin tocar queda con M=0 (MIN de
+    # celdas vacías) y H vacío tratado como 0 en la comparación numérica,
+    # así que "P3>=H3" (0>=0) daba verdadero y las 10 filas arrancaban en
+    # rojo sólido antes de cargar nada -- mismo criterio que ya usa la
+    # grilla web (actualizarColorPrecioFinal): sin precio de referencia
+    # real todavía, no se pinta nada.
     ws.conditional_formatting.add(
-        rango, FormulaRule(formula=["P3<H3"], fill=verde, font=Font(color="1E7A46"))
+        rango, FormulaRule(formula=['AND(H3<>"",P3<H3)'], fill=verde, font=Font(color="1E7A46"))
     )
     ws.conditional_formatting.add(
-        rango, FormulaRule(formula=["P3>=H3"], fill=rojo, font=Font(color="A3231C"))
+        rango, FormulaRule(formula=['AND(H3<>"",P3>=H3)'], fill=rojo, font=Font(color="A3231C"))
     )
 
     anchos = {

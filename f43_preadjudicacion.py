@@ -19,7 +19,7 @@ import pdfplumber
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
-from f41_a_excel import FMT_MONEDA_ARS
+from f41_a_excel import FMT_MONEDA_ARS, PREFIJOS_CODIGO
 
 # Coordenadas (en puntos) de las columnas de la tabla del F.43. A
 # diferencia del F.41 son puramente posicionales (no hay lineas
@@ -371,9 +371,18 @@ def extraer_preadjudicacion_completa(pdf_path: Path) -> list:
     aparecen en el PDF (agrupados por proveedor/Firma Adjudicada, no por
     numero de renglon); los desiertos - que no tienen una posicion propia
     en la tabla, solo se mencionan en una frase aparte - se agregan al
-    final, ordenados entre si por numero de renglon."""
+    final, ordenados entre si por numero de renglon.
+
+    Los adjudicados se filtran por PREFIJOS_CODIGO (4.01.008/4.01.018,
+    las unicas categorias que la empresa cotiza) -- a proposito DESPUES
+    de calcular renglones_adjudicados (para no romper la deduplicacion
+    contra desiertos) y SIN tocar la lista de desiertos (que no tienen
+    codigo real, "codigo": "", filtrarlos los borraria a todos sin
+    sentido; ya quedan excluidos de la base y de la Nota de Pedido por
+    otros chequeos existentes en app.py)."""
     adjudicados = extraer_adjudicaciones(pdf_path)
     renglones_adjudicados = {it["renglon"] for it in adjudicados}
+    adjudicados = [it for it in adjudicados if it["codigo"].startswith(PREFIJOS_CODIGO)]
 
     desiertos = [
         {

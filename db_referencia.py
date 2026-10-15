@@ -530,7 +530,13 @@ def leer_historial_completo() -> list:
     """Todas las filas de historial_licitaciones, todas las columnas
     visibles (sin la interna descripcion_normalizada), para exportar a
     Excel. Devuelve tuplas crudas (no dicts) en el mismo orden que
-    ENCABEZADOS_HISTORIAL, listas para volcar directo a una hoja."""
+    ENCABEZADOS_HISTORIAL, listas para volcar directo a una hoja.
+
+    Ordenado por expediente, pero los expedientes en sí van del más
+    reciente al más viejo (según fecha_adjudicacion si existe, si no
+    fecha_oferta -- ya NO es "cuándo se cargó", es la fecha de apertura
+    real del documento, a propósito). Adentro de cada expediente se
+    mantiene el orden por renglón de siempre."""
     conn = None
     try:
         conn = _conectar()
@@ -540,7 +546,9 @@ def leer_historial_completo() -> list:
             "precio_ofertado, porcentaje_ofertado, proveedor_elegido, fecha_oferta, "
             "gano_zeid, precio_adjudicado, proveedor_ganador, fecha_adjudicacion, "
             "costo_real, precio_venta_real, fecha_costo "
-            "FROM historial_licitaciones ORDER BY expediente, renglon NULLS LAST, codigo;"
+            "FROM historial_licitaciones "
+            "ORDER BY MAX(COALESCE(fecha_adjudicacion, fecha_oferta)) OVER (PARTITION BY expediente) "
+            "DESC NULLS LAST, expediente, renglon NULLS LAST, codigo;"
         )
         filas = cur.fetchall()
         cur.close()
