@@ -604,17 +604,26 @@ def escribir_planilla_comparacion_vacia(salida: Path, cantidad_filas: int = 10):
     rango = f"P3:P{ultima_fila}"
     # A diferencia de escribir_comparacion_precios_excel (que sólo escribe
     # filas que ya tienen datos reales), acá se pre-crean filas en blanco:
-    # sin el chequeo "H3<>\"\"", una fila sin tocar queda con M=0 (MIN de
-    # celdas vacías) y H vacío tratado como 0 en la comparación numérica,
-    # así que "P3>=H3" (0>=0) daba verdadero y las 10 filas arrancaban en
-    # rojo sólido antes de cargar nada -- mismo criterio que ya usa la
-    # grilla web (actualizarColorPrecioFinal): sin precio de referencia
-    # real todavía, no se pinta nada.
+    # sin un chequeo de "todavía no se cargó nada", una fila sin tocar
+    # queda con M=0 (MIN de celdas vacías) y el precio de comparación
+    # vacío tratado como 0, así que la regla roja daba verdadero y las 10
+    # filas arrancaban en rojo sólido antes de cargar nada.
+    #
+    # A diferencia de la grilla real (donde "Precio de referencia" arranca
+    # con una copia de "Último precio" al cargar un F.41, ver
+    # construirFilaDatos en index.html), acá no hay F.41 cargado: ni E
+    # (Último precio) ni H (Precio de referencia) arrancan con nada, así
+    # que cuál de las dos complete el usuario es indistinto para él -- el
+    # IF(H3<>"",H3,E3) compara contra H si tiene algo, si no cae a E, para
+    # que el color funcione sin importar en cuál de las dos haya escrito
+    # el precio.
     ws.conditional_formatting.add(
-        rango, FormulaRule(formula=['AND(H3<>"",P3<H3)'], fill=verde, font=Font(color="1E7A46"))
+        rango,
+        FormulaRule(formula=['AND(OR(H3<>"",E3<>""),P3<IF(H3<>"",H3,E3))'], fill=verde, font=Font(color="1E7A46")),
     )
     ws.conditional_formatting.add(
-        rango, FormulaRule(formula=['AND(H3<>"",P3>=H3)'], fill=rojo, font=Font(color="A3231C"))
+        rango,
+        FormulaRule(formula=['AND(OR(H3<>"",E3<>""),P3>=IF(H3<>"",H3,E3))'], fill=rojo, font=Font(color="A3231C")),
     )
 
     anchos = {
