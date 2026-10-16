@@ -220,8 +220,6 @@ def extraer_adjudicaciones(pdf_path: Path) -> list:
             return
         desc_palabras = sorted(item_actual["_desc"], key=lambda w: (round(w["top"], 1), w["x0"]))
         descripcion = " ".join(w["text"] for w in desc_palabras).strip()
-        if item_actual["_obs"]:
-            descripcion = (descripcion + " (Obs.: " + " ".join(item_actual["_obs"]) + ")").strip()
         cant_texto = "".join(w["text"] for w in item_actual["_cant"])
         punit_texto = "".join(w["text"] for w in item_actual["_punit"]).replace("$", "")
         items.append(
@@ -269,7 +267,6 @@ def extraer_adjudicaciones(pdf_path: Path) -> list:
                 "_desc": list(buffer_pendiente),
                 "_cant": [],
                 "_punit": [],
-                "_obs": [],
             }
             buffer_pendiente = []
             modo_pendiente = False
@@ -280,9 +277,9 @@ def extraer_adjudicaciones(pdf_path: Path) -> list:
             continue
 
         if any(w["text"] == "Obs.:" for w in linea):
-            if item_actual is not None and not modo_pendiente:
-                nota = " ".join(w["text"] for w in linea if w["text"] != "Obs.:")
-                item_actual["_obs"].append(nota)
+            # Nota aparte del documento (no es descripción real del ítem,
+            # ver comentario de TOL_LINEA más arriba) -- se descarta, el
+            # padre sólo quiere la descripción pura.
             continue
 
         if modo_pendiente:
