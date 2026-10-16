@@ -482,14 +482,17 @@ def leer_historial_por_expediente(expediente: str) -> list:
     puntual (sin la columna interna descripcion_normalizada), ordenadas
     por renglón (el orden real del expediente -- cae a código para las
     filas viejas que se guardaron antes de existir esta columna, donde
-    renglon es NULL)."""
+    renglon es NULL). Incluye todas las columnas editables (se usa tanto
+    para la vista de sólo lectura como para la grilla editable de la
+    pestaña Historial)."""
     conn = None
     try:
         conn = _conectar()
         cur = conn.cursor()
         cur.execute(
-            "SELECT codigo, descripcion, cantidad, precio_ofertado, proveedor_elegido, "
-            "gano_zeid, precio_adjudicado, proveedor_ganador, costo_real, precio_venta_real, renglon "
+            "SELECT codigo, descripcion, contratacion, cantidad, precio_ofertado, porcentaje_ofertado, "
+            "proveedor_elegido, fecha_oferta, gano_zeid, precio_adjudicado, proveedor_ganador, "
+            "fecha_adjudicacion, costo_real, precio_venta_real, fecha_costo, renglon "
             "FROM historial_licitaciones WHERE expediente = %s ORDER BY renglon NULLS LAST, codigo;",
             (expediente,),
         )
@@ -509,21 +512,76 @@ def leer_historial_por_expediente(expediente: str) -> list:
         {
             "codigo": codigo,
             "descripcion": descripcion,
+            "contratacion": contratacion,
             "cantidad": float(cantidad) if cantidad is not None else None,
             "precio_ofertado": float(precio_ofertado) if precio_ofertado is not None else None,
+            "porcentaje_ofertado": float(porcentaje_ofertado) if porcentaje_ofertado is not None else None,
             "proveedor_elegido": proveedor_elegido,
+            "fecha_oferta": fecha_oferta.isoformat() if fecha_oferta is not None else None,
             "gano_zeid": gano_zeid,
             "precio_adjudicado": float(precio_adjudicado) if precio_adjudicado is not None else None,
             "proveedor_ganador": proveedor_ganador,
+            "fecha_adjudicacion": fecha_adjudicacion.isoformat() if fecha_adjudicacion is not None else None,
             "costo_real": float(costo_real) if costo_real is not None else None,
             "precio_venta_real": float(precio_venta_real) if precio_venta_real is not None else None,
+            "fecha_costo": fecha_costo.isoformat() if fecha_costo is not None else None,
             "renglon": renglon,
         }
         for (
-            codigo, descripcion, cantidad, precio_ofertado, proveedor_elegido,
-            gano_zeid, precio_adjudicado, proveedor_ganador, costo_real, precio_venta_real, renglon,
+            codigo, descripcion, contratacion, cantidad, precio_ofertado, porcentaje_ofertado,
+            proveedor_elegido, fecha_oferta, gano_zeid, precio_adjudicado, proveedor_ganador,
+            fecha_adjudicacion, costo_real, precio_venta_real, fecha_costo, renglon,
         ) in filas
     ]
+
+
+def guardar_edicion_historial(expediente: str, filas: list) -> int:
+    """Reemplaza TODAS las filas de historial_licitaciones para este
+    expediente por las que vienen en `filas` (edición manual desde la
+    pestaña Historial). A diferencia de guardar_oferta_historial/
+    guardar_resultado_adjudicacion (que son upserts aditivos que nunca
+    pisan con NULL ni borran), esto es un reemplazo total: lo que no está
+    en `filas` se borra. Transaccional: DELETE + INSERTs van sobre la
+    misma conexión sin commit intermedio, así que si algo falla a mitad de
+    camino, Postgres hace rollback de todo (incluido el DELETE) al cerrar
+    la conexión sin haber hecho commit."""
+    conn = None
+    try:
+        conn = _conectar()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM historial_licitaciones WHERE expediente = %s;", (expediente,))
+        for fila in filas:
+            codigo = fila["codigo"]
+            descripcion = fila["descripcion"]
+            cur.execute(
+                "INSERT INTO historial_licitaciones ("
+                "codigo, descripcion_normalizada, expediente, renglon, descripcion, contratacion, "
+                "cantidad, precio_ofertado, porcentaje_ofertado, proveedor_elegido, fecha_oferta, "
+                "gano_zeid, precio_adjudicado, proveedor_ganador, fecha_adjudicacion, "
+                "costo_real, precio_venta_real, fecha_costo"
+                ") VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
+                (
+                    codigo, normalizar_descripcion(descripcion), expediente, fila.get("renglon"),
+                    descripcion, fila.get("contratacion"), fila.get("cantidad"),
+                    fila.get("precio_ofertado"), fila.get("porcentaje_ofertado"),
+                    fila.get("proveedor_elegido"), fila.get("fecha_oferta"),
+                    fila.get("gano_zeid"), fila.get("precio_adjudicado"), fila.get("proveedor_ganador"),
+                    fila.get("fecha_adjudicacion"), fila.get("costo_real"), fila.get("precio_venta_real"),
+                    fila.get("fecha_costo"),
+                ),
+            )
+        cur.close()
+        conn.commit()
+    except ErrorPreciosReferencia:
+        raise
+    except Exception as exc:
+        raise ErrorPreciosReferencia(
+            f"No se pudo guardar la edición del historial: {type(exc).__name__}: {exc!r}"
+        ) from exc
+    finally:
+        if conn is not None:
+            conn.close()
+    return len(filas)
 
 
 def leer_historial_completo() -> list:

@@ -15,6 +15,7 @@ import sys
 import tempfile
 import threading
 import webbrowser
+from datetime import date
 from pathlib import Path
 
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
@@ -38,6 +39,7 @@ from f41_a_excel import (  # noqa: E402
 from db_referencia import (
     ErrorPreciosReferencia,
     escribir_historial_excel,
+    guardar_edicion_historial,
     guardar_oferta_historial,
     guardar_precios_referencia,
     guardar_resultado_adjudicacion,
@@ -651,6 +653,85 @@ def historial_expediente():
         ), 502
 
     return jsonify(items=items)
+
+
+def _parsear_fecha_edicion(valor):
+    """Para campos de fecha de la grilla editable de Historial: acepta
+    'YYYY-MM-DD' (lo que manda el tipo 'calendar' de jspreadsheet), string
+    vacío o None -> None."""
+    texto = (valor or "").strip() if isinstance(valor, str) else valor
+    if not texto:
+        return None
+    try:
+        return date.fromisoformat(texto)
+    except (TypeError, ValueError):
+        return None
+
+
+@app.route("/guardar_edicion_historial", methods=["POST"])
+def guardar_edicion_historial_ruta():
+    cuerpo = request.get_json(silent=True) or {}
+    expediente = (cuerpo.get("expediente") or "").strip()
+    filas = cuerpo.get("filas") or []
+    if not expediente:
+        return jsonify(error="Falta el expediente."), 400
+
+    def _float_o_none(valor):
+        if valor is None or valor == "":
+            return None
+        try:
+            return float(valor)
+        except (TypeError, ValueError):
+            return None
+
+    filas_validas = []
+    for fila in filas:
+        codigo = (fila.get("codigo") or "").strip()
+        descripcion = (fila.get("descripcion") or "").strip()
+        if not codigo or not descripcion:
+            continue  # fila vacía/incompleta de la grilla: se descarta, no se guarda
+
+        renglon = fila.get("renglon")
+        try:
+            renglon = int(renglon) if renglon not in (None, "") else None
+        except (TypeError, ValueError):
+            renglon = None
+
+        gano_zeid = fila.get("gano_zeid")
+        if isinstance(gano_zeid, str):
+            texto_gano = gano_zeid.strip().lower()
+            gano_zeid = texto_gano in ("1", "true", "si", "sí", "yes") if texto_gano else None
+        else:
+            gano_zeid = bool(gano_zeid) if gano_zeid is not None else None
+
+        filas_validas.append(
+            {
+                "codigo": codigo,
+                "descripcion": descripcion,
+                "contratacion": (fila.get("contratacion") or "").strip() or None,
+                "cantidad": _float_o_none(fila.get("cantidad")),
+                "precio_ofertado": _float_o_none(fila.get("precio_ofertado")),
+                "porcentaje_ofertado": _float_o_none(fila.get("porcentaje_ofertado")),
+                "proveedor_elegido": (fila.get("proveedor_elegido") or "").strip() or None,
+                "fecha_oferta": _parsear_fecha_edicion(fila.get("fecha_oferta")),
+                "gano_zeid": gano_zeid,
+                "precio_adjudicado": _float_o_none(fila.get("precio_adjudicado")),
+                "proveedor_ganador": (fila.get("proveedor_ganador") or "").strip() or None,
+                "fecha_adjudicacion": _parsear_fecha_edicion(fila.get("fecha_adjudicacion")),
+                "costo_real": _float_o_none(fila.get("costo_real")),
+                "precio_venta_real": _float_o_none(fila.get("precio_venta_real")),
+                "fecha_costo": _parsear_fecha_edicion(fila.get("fecha_costo")),
+                "renglon": renglon,
+            }
+        )
+
+    try:
+        cantidad = guardar_edicion_historial(expediente, filas_validas)
+    except ErrorPreciosReferencia as exc:
+        print(f"[historial-licitaciones] Fallo guardando edición: {exc}", file=sys.stderr, flush=True)
+        return jsonify(error="No se pudo guardar los cambios. Probá de nuevo en un momento."), 502
+
+    return jsonify(ok=True, cantidad=cantidad)
 
 
 @app.route("/exportar_historial", methods=["GET"])

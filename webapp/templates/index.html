@@ -379,6 +379,17 @@
   .tabla-historial td { color: #1a2b4c; font-size: 14px; }
   .tabla-historial td:first-child, .tabla-historial th:first-child { text-align: left; }
   .tabla-historial tr:last-child td { border-bottom: none; }
+  .fila-botones-historial {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 16px auto 0;
+  }
+  .fila-botones-historial button {
+    width: auto;
+    flex: 1;
+    margin-top: 0;
+  }
   .vacio-historial {
     text-align: center;
     color: #8291ab;
@@ -630,6 +641,11 @@
     </div>
 
     <div id="zona-historial-expediente"></div>
+
+    <div class="ancho-angosto fila-botones-historial" id="zona-botones-historial-expediente">
+      <button type="button" id="boton-agregar-fila-historial" disabled>+ Agregar fila</button>
+      <button type="button" id="boton-guardar-historial-expediente" disabled>Guardar cambios</button>
+    </div>
   </div>
 
 </div>
@@ -1981,6 +1997,10 @@
   const botonBuscarExpediente = document.getElementById('boton-buscar-expediente');
   const mensajeExpedienteHistorial = document.getElementById('mensaje-expediente-historial');
   const zonaHistorialExpediente = document.getElementById('zona-historial-expediente');
+  const botonAgregarFilaHistorial = document.getElementById('boton-agregar-fila-historial');
+  const botonGuardarHistorialExpediente = document.getElementById('boton-guardar-historial-expediente');
+  let worksheetHistorialExp = null;
+  let expedienteHistorialActual = '';
 
   function formatearPesos(valor) {
     return '$ ' + valor.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -2099,54 +2119,133 @@
   }
   botonExportarHistorial.addEventListener('click', exportarHistorial);
 
+  // Orden de columnas de la grilla editable de "Historial por
+  // expediente" -- tiene que coincidir 1 a 1 con el orden que lee
+  // guardarEdicionHistorialExpediente() al armar el payload para
+  // /guardar_edicion_historial.
+  const COLUMNAS_HISTORIAL_EXPEDIENTE = [
+    'renglon', 'codigo', 'descripcion', 'contratacion', 'cantidad', 'precio_ofertado',
+    'porcentaje_ofertado', 'proveedor_elegido', 'fecha_oferta', 'gano_zeid',
+    'precio_adjudicado', 'proveedor_ganador', 'fecha_adjudicacion', 'costo_real',
+    'precio_venta_real', 'fecha_costo',
+  ];
+
+  function construirFilaHistorialExpediente(it) {
+    return [
+      it.renglon ?? '',
+      it.codigo || '',
+      it.descripcion || '',
+      it.contratacion || '',
+      it.cantidad ?? '',
+      it.precio_ofertado ?? '',
+      it.porcentaje_ofertado ?? '',
+      it.proveedor_elegido || '',
+      it.fecha_oferta || '',
+      it.gano_zeid === true ? 'Sí' : it.gano_zeid === false ? 'No' : '',
+      it.precio_adjudicado ?? '',
+      it.proveedor_ganador || '',
+      it.fecha_adjudicacion || '',
+      it.costo_real ?? '',
+      it.precio_venta_real ?? '',
+      it.fecha_costo || '',
+    ];
+  }
+
   function renderizarHistorialExpediente(items) {
     zonaHistorialExpediente.innerHTML = '';
+    worksheetHistorialExp = null;
     if (!items.length) {
       const vacio = document.createElement('p');
       vacio.className = 'vacio-historial';
       vacio.textContent = 'No hay nada guardado todavía para ese expediente.';
       zonaHistorialExpediente.appendChild(vacio);
+      botonAgregarFilaHistorial.disabled = true;
+      botonGuardarHistorialExpediente.disabled = true;
       return;
     }
 
-    const tabla = document.createElement('table');
-    tabla.className = 'tabla-historial';
-    const encabezado = document.createElement('tr');
-    [
-      'Rg', 'Código', 'Descripción', 'Cantidad', 'Precio ofertado', 'Proveedor elegido',
-      '¿Ganó Zeid?', 'Precio adjudicado', 'Proveedor ganador', 'Costo real', 'P. Venta real',
-    ].forEach(titulo => {
-      const th = document.createElement('th');
-      th.textContent = titulo;
-      encabezado.appendChild(th);
-    });
-    tabla.appendChild(encabezado);
+    const ayuda = document.createElement('p');
+    ayuda.className = 'ayuda-formulas';
+    ayuda.textContent = 'Podés editar cualquier celda. Las fechas van en formato AAAA-MM-DD. Hacé clic derecho sobre una celda para insertar o borrar renglones, y tocá "Guardar cambios" cuando termines.';
+    zonaHistorialExpediente.appendChild(ayuda);
 
-    items.forEach(it => {
-      const fila = document.createElement('tr');
-      const valores = [
-        it.renglon ?? '',
-        it.codigo || '',
-        it.descripcion || '',
-        it.cantidad ?? '',
-        it.precio_ofertado !== null && it.precio_ofertado !== undefined ? formatearPesos(it.precio_ofertado) : '',
-        it.proveedor_elegido || '',
-        it.gano_zeid === true ? 'Sí' : it.gano_zeid === false ? 'No' : '',
-        it.precio_adjudicado !== null && it.precio_adjudicado !== undefined ? formatearPesos(it.precio_adjudicado) : '',
-        it.proveedor_ganador || '',
-        it.costo_real !== null && it.costo_real !== undefined ? formatearPesos(it.costo_real) : '',
-        it.precio_venta_real !== null && it.precio_venta_real !== undefined ? formatearPesos(it.precio_venta_real) : '',
-      ];
-      valores.forEach((valor, indice) => {
-        const td = document.createElement('td');
-        td.textContent = valor;
-        if (indice === 2) td.style.textAlign = 'left';
-        fila.appendChild(td);
-      });
-      tabla.appendChild(fila);
+    const envoltorio = document.createElement('div');
+    envoltorio.className = 'grilla-comparacion-wrap';
+    zonaHistorialExpediente.appendChild(envoltorio);
+
+    const datos = items.map(construirFilaHistorialExpediente);
+    const instancias = jspreadsheet(envoltorio, {
+      worksheets: [
+        {
+          data: datos,
+          columnSorting: false,
+          tableOverflow: true,
+          tableWidth: '100%',
+          tableHeight: '65vh',
+          columns: [
+            { type: 'numeric', title: 'Rg', width: 60 },
+            { type: 'text', title: 'Código', width: 100 },
+            { type: 'text', title: 'Descripción', width: 220, align: 'left', wordWrap: true },
+            { type: 'text', title: 'Contratación', width: 110 },
+            { type: 'numeric', title: 'Cantidad', width: 80 },
+            Object.assign({ type: 'text', title: 'Precio ofertado', width: 120 }, MASCARA_PESOS),
+            { type: 'text', title: '% ofertado', width: 80, decimal: ',' },
+            { type: 'text', title: 'Proveedor elegido', width: 150 },
+            { type: 'text', title: 'Fecha oferta', width: 110 },
+            { type: 'text', title: '¿Ganó Zeid?', width: 90 },
+            Object.assign({ type: 'text', title: 'Precio adjudicado', width: 120 }, MASCARA_PESOS),
+            { type: 'text', title: 'Proveedor ganador', width: 150 },
+            { type: 'text', title: 'Fecha adjudicación', width: 120 },
+            Object.assign({ type: 'text', title: 'Costo real', width: 110 }, MASCARA_PESOS),
+            Object.assign({ type: 'text', title: 'P. Venta real', width: 120 }, MASCARA_PESOS),
+            { type: 'text', title: 'Fecha costo', width: 110 },
+          ],
+        },
+      ],
     });
-    zonaHistorialExpediente.appendChild(tabla);
+    worksheetHistorialExp = instancias[0];
+    botonAgregarFilaHistorial.disabled = false;
+    botonGuardarHistorialExpediente.disabled = false;
   }
+
+  botonAgregarFilaHistorial.addEventListener('click', () => {
+    if (!worksheetHistorialExp) return;
+    worksheetHistorialExp.insertRow(construirFilaHistorialExpediente({}));
+  });
+
+  async function guardarEdicionHistorialExpediente() {
+    if (!worksheetHistorialExp || !expedienteHistorialActual) return;
+    if (!confirm('Esto va a REEMPLAZAR todas las filas guardadas del expediente ' + expedienteHistorialActual + ' por lo que ves en la grilla (lo que borraste ahí también se borra en la base). ¿Confirmar?')) {
+      return;
+    }
+
+    const filas = worksheetHistorialExp.getData().map(fila => {
+      const obj = {};
+      COLUMNAS_HISTORIAL_EXPEDIENTE.forEach((clave, indice) => { obj[clave] = fila[indice]; });
+      return obj;
+    });
+
+    botonGuardarHistorialExpediente.disabled = true;
+    botonGuardarHistorialExpediente.textContent = 'Guardando…';
+    try {
+      const respuesta = await fetch('/guardar_edicion_historial', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expediente: expedienteHistorialActual, filas }),
+      });
+      const cuerpo = await respuesta.json().catch(() => ({}));
+      if (!respuesta.ok) {
+        mostrarMensaje(mensajeExpedienteHistorial, cuerpo.error || 'No se pudo guardar.', 'error');
+      } else {
+        mostrarMensaje(mensajeExpedienteHistorial, '✅ Cambios guardados (' + cuerpo.cantidad + ' fila(s)).', 'exito');
+      }
+    } catch (err) {
+      mostrarMensaje(mensajeExpedienteHistorial, 'No se pudo conectar con la página. Volvé a intentar.', 'error');
+    }
+    botonGuardarHistorialExpediente.disabled = false;
+    botonGuardarHistorialExpediente.textContent = 'Guardar cambios';
+  }
+  botonGuardarHistorialExpediente.addEventListener('click', guardarEdicionHistorialExpediente);
 
   async function buscarExpedienteHistorial() {
     const expediente = inputExpedienteHistorial.value.trim();
@@ -2156,6 +2255,9 @@
     }
     ocultarMensaje(mensajeExpedienteHistorial);
     zonaHistorialExpediente.innerHTML = '';
+    botonAgregarFilaHistorial.disabled = true;
+    botonGuardarHistorialExpediente.disabled = true;
+    worksheetHistorialExp = null;
     botonBuscarExpediente.disabled = true;
     botonBuscarExpediente.textContent = 'Buscando…';
     try {
@@ -2164,6 +2266,7 @@
       if (!respuesta.ok) {
         mostrarMensaje(mensajeExpedienteHistorial, cuerpo.error || 'No se pudo buscar el expediente.', 'error');
       } else {
+        expedienteHistorialActual = expediente;
         renderizarHistorialExpediente(cuerpo.items || []);
       }
     } catch (err) {
