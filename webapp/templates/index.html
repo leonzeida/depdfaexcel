@@ -310,16 +310,6 @@
     background: #fff8e6;
     border: 1px solid #f0d78c;
     border-radius: 10px;
-    /* Pegado abajo del todo (mismo truco que .fila-botones-comparar
-       pegado arriba): la grilla tiene su propio scroll interno (65vh,
-       no se mueve con la página), así que sin esto el cartel de
-       sugerencias quedaba fuera de vista mientras se mira o scrollea la
-       grilla -- quedan siempre visibles juntos, sin importar cuál de
-       los dos se scrollee. */
-    position: sticky;
-    bottom: 0;
-    z-index: 6;
-    box-shadow: 0 -6px 16px rgba(0,0,0,0.15);
   }
   .titulo-sugerencias {
     font-size: 13px;
