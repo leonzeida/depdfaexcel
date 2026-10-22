@@ -303,6 +303,65 @@
     font-size: 13px;
     margin: 6px 2px 2px;
   }
+  .zona-sugerencias-comparar {
+    max-width: 820px;
+    margin: 18px auto 0;
+    padding: 14px 16px;
+    background: #fff8e6;
+    border: 1px solid #f0d78c;
+    border-radius: 10px;
+    /* Pegado abajo del todo (mismo truco que .fila-botones-comparar
+       pegado arriba): la grilla tiene su propio scroll interno (65vh,
+       no se mueve con la página), así que sin esto el cartel de
+       sugerencias quedaba fuera de vista mientras se mira o scrollea la
+       grilla -- quedan siempre visibles juntos, sin importar cuál de
+       los dos se scrollee. */
+    position: sticky;
+    bottom: 0;
+    z-index: 6;
+    box-shadow: 0 -6px 16px rgba(0,0,0,0.15);
+  }
+  .titulo-sugerencias {
+    font-size: 13px;
+    color: #5a4a00;
+    margin: 0 0 10px;
+  }
+  .linea-sugerencia {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    background: #ffffff;
+    border: 1px solid #f0d78c;
+    border-radius: 8px;
+    padding: 8px 10px;
+    margin-bottom: 6px;
+  }
+  .texto-sugerencia {
+    font-size: 13px;
+    color: #1a2b4c;
+    flex: 1;
+    min-width: 220px;
+  }
+  .texto-sugerencia-revisar { color: #7a5200; }
+  .botones-linea-sugerencia {
+    display: flex;
+    gap: 6px;
+    flex: none;
+  }
+  .boton-usar-sugerencia, .boton-ignorar-sugerencia {
+    width: auto;
+    margin-top: 0;
+    padding: 6px 14px;
+    font-size: 13px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .boton-usar-sugerencia { background: #4f7cff; border: 1px solid #4f7cff; color: #fff; }
+  .boton-usar-sugerencia:hover { background: #3d68e0; }
+  .boton-ignorar-sugerencia { background: transparent; border: 1px solid #dbe1e8; color: #5a6b85; }
+  .boton-ignorar-sugerencia:hover { background: #f4f8ff; }
   .ayuda-formulas {
     text-align: center;
     color: #8291ab;
@@ -443,6 +502,15 @@
     .panel-agregar-item .resultado-agregar-item { color: #eef2f7; }
     .panel-agregar-item .resultado-agregar-item:hover { background: #232a3d; border-color: #4f7cff; }
     .resultado-agregar-item-vacio { color: #6b7793; }
+    .zona-sugerencias-comparar { background: #3a3420; border-color: #5a4a1f; }
+    .titulo-sugerencias { color: #e0c96a; }
+    .linea-sugerencia { background: #1b2030; border-color: #5a4a1f; }
+    .texto-sugerencia { color: #eef2f7; }
+    .texto-sugerencia-revisar { color: #f0c56a; }
+    .boton-usar-sugerencia { background: #4f7cff; border-color: #4f7cff; color: #fff; }
+    .boton-usar-sugerencia:hover { background: #3d68e0; }
+    .boton-ignorar-sugerencia { color: #9aa8c7; border-color: #333d55; }
+    .boton-ignorar-sugerencia:hover { background: #232a3d; }
     .grilla-comparacion-wrap { border-color: #333d55; }
     .titulo-comparacion { background: #3a4522; color: #d4ea6b; }
     .ayuda-formulas { color: #6b7793; }
@@ -825,6 +893,7 @@
   // crearGrillaComparacion lo reasigna cada vez que arma una grilla nueva.
   // Hace falta porque "Agregar ítem" vive fuera de esa función.
   let recalcularTodoActual = () => {};
+  let zonaSugerenciasComparar = null;
 
   // Arma las 18 columnas de una fila de la grilla a partir de un item
   // ({rg, codigo, descripcion, cantidad, ultimo_precio, porcentaje,
@@ -952,6 +1021,7 @@
     otrosItemsActuales = otrosItemsActuales.filter(otro => otro !== it);
     fijarSoloLecturaColumnas(worksheetActual, itemsActuales.length, checkboxModoManual.checked);
     recalcularTodoActual();
+    renderizarSugerenciasComparar(itemsActuales);
     cerrarPanelAgregarItem();
     mostrarMensaje(mensajeComparar, 'Se agregó el renglón ' + it.rg + ' (' + it.codigo + ') al final de la grilla.', 'exito');
   }
@@ -995,6 +1065,122 @@
     } catch (err) {
       // No pasa nada si no se puede guardar, simplemente no persiste.
     }
+  }
+
+  // Para ítems que no matchearon un "Último precio" automático pero hay
+  // otra variante ya guardada con el mismo código (ver "sugerencia" en
+  // _mapear_item, webapp/app.py): nunca se autocompleta solo (riesgo de
+  // traer el precio de un ítem real distinto, ej. un catéter de otra
+  // medida) -- se muestra UNA sola sugerencia compacta (la más parecida)
+  // con botones Usar/Ignorar, en vez de una lista larga para revisar a
+  // mano (en la práctica la más parecida por texto fue siempre la
+  // correcta, y leer 15 opciones termina siendo más lento que tipear el
+  // precio directamente).
+  function formatearSugerencia(s) {
+    const precio = s.ultimo_precio !== null && s.ultimo_precio !== undefined ? formatearPesos(s.ultimo_precio) : '(sin precio)';
+    const fecha = formatearFecha(s.actualizado);
+    const proveedor = s.mejor_proveedor ? ' — ' + s.mejor_proveedor : '';
+    return s.descripcion + ' — ' + precio + (fecha ? ' (' + fecha + ')' : '') + proveedor;
+  }
+
+  // Marca la celda de "Último precio" de la fila con un borde + un
+  // comentario (tooltip nativo del navegador al pasar el mouse, via
+  // setComments de jspreadsheet) con el texto de la sugerencia, para que
+  // se note directamente sobre la celda y no sólo en el cartel de abajo.
+  // Usa "border" (no "background-color") a propósito: varias filas ya
+  // tienen un fondo celeste fijo (ítems "descartables" 4.01.008, ver más
+  // abajo en crearGrillaComparacion) y un fondo nuevo lo taparía.
+  function marcarCeldaConSugerencia(fila, s) {
+    if (!worksheetActual) return;
+    const aviso = s.numeros_coinciden === false ? '⚠️ revisar número — ' : '';
+    worksheetActual.setComments('E' + fila, aviso + '¿' + formatearSugerencia(s) + '?');
+    worksheetActual.setStyle('E' + fila, 'border', '2px solid #e0a52a', true);
+  }
+
+  function desmarcarCeldaConSugerencia(fila) {
+    if (!worksheetActual) return;
+    worksheetActual.setComments('E' + fila, '');
+    worksheetActual.setStyle('E' + fila, 'border', 'none', true);
+  }
+
+  function aplicarSugerencia(fila, sugerencia, linea) {
+    if (!worksheetActual) return;
+    const precio = sugerencia.ultimo_precio !== null && sugerencia.ultimo_precio !== undefined ? sugerencia.ultimo_precio : '';
+    worksheetActual.setValue('E' + fila, precio, true);
+    worksheetActual.setValue('F' + fila, formatearFecha(sugerencia.actualizado), true);
+    worksheetActual.setValue('G' + fila, sugerencia.mejor_proveedor || '', true);
+    worksheetActual.setValue('H' + fila, precio, true);
+    recalcularTodoActual();
+    desmarcarCeldaConSugerencia(fila);
+    linea.remove();
+    if (zonaSugerenciasComparar && !zonaSugerenciasComparar.querySelector('.linea-sugerencia')) {
+      zonaSugerenciasComparar.hidden = true;
+    }
+  }
+
+  function renderizarSugerenciasComparar(items) {
+    if (!zonaSugerenciasComparar) return;
+    zonaSugerenciasComparar.innerHTML = '';
+
+    const conSugerencia = items
+      .map((item, indice) => ({ item, fila: indice + 1 }))
+      .filter(({ item }) => (item.ultimo_precio === null || item.ultimo_precio === undefined) && item.sugerencia);
+
+    if (!conSugerencia.length) {
+      zonaSugerenciasComparar.hidden = true;
+      return;
+    }
+    zonaSugerenciasComparar.hidden = false;
+
+    const titulo = document.createElement('p');
+    titulo.className = 'titulo-sugerencias';
+    titulo.textContent = 'Estos ítems no trajeron un precio automático. Si te parece que es el mismo, tocá "Usar" (no se completa solo):';
+    zonaSugerenciasComparar.appendChild(titulo);
+
+    conSugerencia.forEach(({ item, fila }) => {
+      const s = item.sugerencia;
+      marcarCeldaConSugerencia(fila, s);
+
+      const linea = document.createElement('div');
+      linea.className = 'linea-sugerencia';
+
+      const texto = document.createElement('span');
+      // Texto muy parecido pero con un número distinto (medida, calibre,
+      // tamaño) -- ej. "N°20" vs "N°22": casi el mismo texto, pero es
+      // otro producto con otro precio. Se marca para que no pase
+      // desapercibido, en vez de confiar en que el usuario note la
+      // diferencia de un solo caracter en medio de la lista.
+      texto.className = s.numeros_coinciden === false ? 'texto-sugerencia texto-sugerencia-revisar' : 'texto-sugerencia';
+      const advertencia = s.numeros_coinciden === false ? '⚠️ ' : '';
+      texto.textContent = advertencia + 'Rg. ' + item.rg + ' — ' + item.descripcion + ' → ¿' + formatearSugerencia(s) + '?';
+      linea.appendChild(texto);
+
+      const botones = document.createElement('div');
+      botones.className = 'botones-linea-sugerencia';
+
+      const botonUsar = document.createElement('button');
+      botonUsar.type = 'button';
+      botonUsar.className = 'boton-usar-sugerencia';
+      botonUsar.textContent = 'Usar';
+      botonUsar.addEventListener('click', () => aplicarSugerencia(fila, s, linea));
+      botones.appendChild(botonUsar);
+
+      const botonIgnorar = document.createElement('button');
+      botonIgnorar.type = 'button';
+      botonIgnorar.className = 'boton-ignorar-sugerencia';
+      botonIgnorar.textContent = 'Ignorar';
+      botonIgnorar.addEventListener('click', () => {
+        desmarcarCeldaConSugerencia(fila);
+        linea.remove();
+        if (zonaSugerenciasComparar && !zonaSugerenciasComparar.querySelector('.linea-sugerencia')) {
+          zonaSugerenciasComparar.hidden = true;
+        }
+      });
+      botones.appendChild(botonIgnorar);
+
+      linea.appendChild(botones);
+      zonaSugerenciasComparar.appendChild(linea);
+    });
   }
 
   function crearGrillaComparacion(titulo, items) {
@@ -1135,6 +1321,12 @@
     botonDescargarExcel.textContent = 'Descargar esta comparación como Excel';
     botonDescargarExcel.addEventListener('click', descargarExcelComparacion);
     zonaTablaComparar.appendChild(botonDescargarExcel);
+
+    zonaSugerenciasComparar = document.createElement('div');
+    zonaSugerenciasComparar.className = 'zona-sugerencias-comparar';
+    zonaSugerenciasComparar.hidden = true;
+    zonaTablaComparar.appendChild(zonaSugerenciasComparar);
+    renderizarSugerenciasComparar(itemsActuales);
 
     botonGuardarReferencia.disabled = false;
     botonAgregarItem.disabled = false;

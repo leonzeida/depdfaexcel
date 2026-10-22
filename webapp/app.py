@@ -7,14 +7,17 @@ f41_a_excel.py.
 """
 
 import base64
+import difflib
 import hmac
 import json
 import os
+import re
 import secrets
 import sys
 import tempfile
 import threading
 import webbrowser
+from collections import defaultdict
 from datetime import date
 from pathlib import Path
 
@@ -188,8 +191,69 @@ def items_para_comparar():
             error="No se pudo conectar con la base de precios de referencia. Probá de nuevo en un momento."
         ), 502
 
+    # Para cuando un ítem no matchea ningún precio: agrupa lo que ya hay
+    # guardado por código (sin importar la descripción), para poder
+    # sugerirle al usuario las otras variantes ya conocidas de ese mismo
+    # código en vez de dejarlo tipear el precio a ciegas. No autocompleta
+    # nada solo -- el riesgo de un match automático aproximado es traer el
+    # precio de un ítem real distinto (ej. un catéter de otra medida).
+    #
+    # Algunos códigos del nomenclador agrupan cientos de ítems sin
+    # relación entre sí (ej. "OTROS INSUMOS HOSPITALARIOS" mezcla gasas,
+    # catéteres, vendas...), así que ordenar sólo por fecha no alcanza: la
+    # variante correcta puede terminar perdida entre un montón de otras
+    # sin nada que ver. Se ordena por similitud de texto contra la
+    # descripción real del ítem (difflib, sin dependencias nuevas), para
+    # que lo más parecido aparezca primero.
+    #
+    # Los números sueltos (medida, calibre, tamaño) se tratan aparte: para
+    # el algoritmo de texto, "N°20" y "N°22" son casi idénticos (1 solo
+    # carácter distinto), pero son productos y precios distintos. Si los
+    # números de la descripción real no coinciden con los de una
+    # sugerencia, esa sugerencia se manda al final del orden Y se marca
+    # con numeros_coinciden=False para que el frontend la resalte --
+    # mejor mostrarla más abajo y marcada que dejar que una coincidencia
+    # de texto casi perfecta tape al verdadero riesgo de tamaño.
+    def _numeros(texto):
+        return re.findall(r"\d+", texto)
+
+    def _numeros_coinciden(numeros_item, numeros_candidata):
+        # Si a cualquiera de las dos descripciones le falta el número (ej.
+        # una variante guardada antes del arreglo de "Obs." puede haber
+        # perdido el tamaño/medida que iba en la nota), no hay nada
+        # concreto para contradecir -- se trata como neutral, no como un
+        # mismatch, para no marcar como "revisar" la sugerencia que en
+        # realidad es la correcta.
+        if not numeros_item or not numeros_candidata:
+            return True
+        return numeros_item == numeros_candidata
+
+    por_codigo = defaultdict(list)
+    for (codigo, descripcion_normalizada), datos_ref in referencias.items():
+        por_codigo[codigo].append({"descripcion": descripcion_normalizada, **datos_ref})
+
     def _mapear_item(item):
-        datos = referencias.get(clave_item(item["codigo"], item["descripcion"]), {})
+        clave = clave_item(item["codigo"], item["descripcion"])
+        datos = referencias.get(clave, {})
+        sugerencia = None
+        if datos.get("ultimo_precio") is None:
+            numeros_item = _numeros(clave[1])
+            candidatas = [v for v in por_codigo.get(item["codigo"], []) if v["descripcion"] != clave[1]]
+            for v in candidatas:
+                v["numeros_coinciden"] = _numeros_coinciden(numeros_item, _numeros(v["descripcion"]))
+            if candidatas:
+                # Una sola sugerencia (la más parecida), no una lista larga
+                # para revisar a mano -- en la práctica la más parecida por
+                # texto fue siempre la correcta en las pruebas, y una
+                # lista de 15 opciones termina siendo más lento de leer
+                # que tipear el precio directamente.
+                sugerencia = max(
+                    candidatas,
+                    key=lambda v: (
+                        difflib.SequenceMatcher(None, clave[1], v["descripcion"]).ratio(),
+                        v.get("actualizado") or "",
+                    ),
+                )
         return {
             "rg": item["rg"],
             "codigo": item["codigo"],
@@ -199,6 +263,7 @@ def items_para_comparar():
             "porcentaje": datos.get("porcentaje"),
             "actualizado": datos.get("actualizado"),
             "mejor_proveedor": datos.get("mejor_proveedor"),
+            "sugerencia": sugerencia,
         }
 
     items = [_mapear_item(item) for item in filas]
