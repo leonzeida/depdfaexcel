@@ -50,6 +50,7 @@ from db_referencia import (
     leer_historial_por_expediente,
     leer_precios_referencia,
     leer_resumen_proveedores,
+    verificar_conexion,
 )
 from editar_f41_pdf import generar_f41_editado
 from f43_preadjudicacion import (
@@ -79,7 +80,10 @@ if not SITE_PASSWORD:
     )
 
 # Rutas que no requieren haber iniciado sesión.
-_RUTAS_PUBLICAS = {"/login", "/static"}
+# "/ping_db" a propósito: la golpea un cron externo (ver verificar_conexion
+# en db_referencia.py) para mantener despierta la base de Neon, que no
+# tiene forma de loguearse.
+_RUTAS_PUBLICAS = {"/login", "/static", "/ping_db"}
 
 
 @app.before_request
@@ -113,6 +117,19 @@ def logout():
 @app.route("/", methods=["GET"])
 def inicio():
     return render_template("index.html")
+
+
+@app.route("/ping_db", methods=["GET"])
+def ping_db():
+    # Pública a propósito (ver _RUTAS_PUBLICAS): la golpea un cron
+    # externo para evitar el cold-start de Neon (ver verificar_conexion
+    # en db_referencia.py). No devuelve ni toca ningún dato.
+    try:
+        verificar_conexion()
+    except ErrorPreciosReferencia as exc:
+        print(f"[ping-db] Fallo: {exc}", file=sys.stderr, flush=True)
+        return jsonify(ok=False), 502
+    return jsonify(ok=True)
 
 
 @app.route("/convertir", methods=["POST"])

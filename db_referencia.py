@@ -190,6 +190,25 @@ def _conectar():
     return conn
 
 
+def verificar_conexion():
+    """Sólo abre y cierra una conexión -- no hace ninguna consulta de
+    datos real. Pensada para que un cron externo (ej. cron-job.org) la
+    golpee cada 5-10 minutos y mantenga "despierto" el compute de Neon:
+    en el plan gratuito, si no hay actividad el motor se suspende, y la
+    PRIMERA conexión después de eso tarda 20+ segundos en "despertarlo"
+    (confirmado: ~21s en frío vs ~2s con la base ya despierta) -- tiempo
+    suficiente como para que un F.41 grande supere el timeout del
+    servidor. No evita el cold-start la primera vez que de verdad pasó
+    un rato largo sin ningún ping, pero si el cron corre seguido, la base
+    nunca llega a dormirse."""
+    conn = None
+    try:
+        conn = _conectar()
+    finally:
+        if conn is not None:
+            conn.close()
+
+
 def _resolver_clave_existente(cur, expediente, renglon, codigo, descripcion_normalizada):
     """Si ya hay una fila guardada para este renglón de este expediente
     (por ejemplo la oferta del F.41, guardada antes de cargar el F.43, o
