@@ -228,9 +228,23 @@ def items_para_comparar():
             return True
         return numeros_item == numeros_candidata
 
+    def _palabras(texto):
+        return set(re.split(r"\W+", texto)) - {""}
+
+    # Algunos códigos del nomenclador agrupan cientos de ítems sin relación
+    # entre sí (ej. un PDF real con 185 ítems sin match tenía códigos de
+    # hasta 283 variantes guardadas = 44.000+ comparaciones de texto, que
+    # tardaban ~15s solas y tiraban la carga por timeout en producción).
+    # Por eso la comparación se hace en dos etapas: primero un filtro
+    # barato por palabras compartidas (sets, prácticamente gratis) sobre
+    # TODAS las variantes del código, y recién sobre esas top 20 se corre
+    # la comparación de texto fina (difflib, más cara) para elegir la
+    # mejor -- en vez de correr difflib contra las 283 de una.
     por_codigo = defaultdict(list)
     for (codigo, descripcion_normalizada), datos_ref in referencias.items():
-        por_codigo[codigo].append({"descripcion": descripcion_normalizada, **datos_ref})
+        por_codigo[codigo].append(
+            {"descripcion": descripcion_normalizada, "palabras": _palabras(descripcion_normalizada), **datos_ref}
+        )
 
     def _mapear_item(item):
         clave = clave_item(item["codigo"], item["descripcion"])
@@ -238,22 +252,31 @@ def items_para_comparar():
         sugerencia = None
         if datos.get("ultimo_precio") is None:
             numeros_item = _numeros(clave[1])
+            palabras_item = _palabras(clave[1])
             candidatas = [v for v in por_codigo.get(item["codigo"], []) if v["descripcion"] != clave[1]]
-            for v in candidatas:
-                v["numeros_coinciden"] = _numeros_coinciden(numeros_item, _numeros(v["descripcion"]))
             if candidatas:
+                candidatas.sort(
+                    key=lambda v: len(palabras_item & v["palabras"]) / (len(palabras_item | v["palabras"]) or 1),
+                    reverse=True,
+                )
+                preseleccion = candidatas[:20]
+                for v in preseleccion:
+                    v["numeros_coinciden"] = _numeros_coinciden(numeros_item, _numeros(v["descripcion"]))
                 # Una sola sugerencia (la más parecida), no una lista larga
                 # para revisar a mano -- en la práctica la más parecida por
                 # texto fue siempre la correcta en las pruebas, y una
                 # lista de 15 opciones termina siendo más lento de leer
                 # que tipear el precio directamente.
-                sugerencia = max(
-                    candidatas,
+                mejor = max(
+                    preseleccion,
                     key=lambda v: (
                         difflib.SequenceMatcher(None, clave[1], v["descripcion"]).ratio(),
                         v.get("actualizado") or "",
                     ),
                 )
+                # Sin "palabras" (un set, no es serializable a JSON) -- era
+                # sólo para el filtro de arriba, no hace falta en la salida.
+                sugerencia = {k: v for k, v in mejor.items() if k != "palabras"}
         return {
             "rg": item["rg"],
             "codigo": item["codigo"],
