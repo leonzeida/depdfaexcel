@@ -70,8 +70,20 @@ def bandas_de_filas(page):
 
 
 def extraer_filas_pagina(page):
+    """Devuelve (filas, continuacion_inicial). `continuacion_inicial` es
+    el texto de Descripción de las bandas sin número de renglón que
+    aparecen ANTES del primer ítem real de la página -- el formulario
+    original puede cortar la descripción de un ítem justo en el borde de
+    la página, dejando su última línea al principio de la página
+    siguiente sin su propio "Rg" (confirmado con un expediente real: el
+    renglón 9 terminaba en "FINO MARCA: MICRODONT" en la primera línea de
+    la página 2, antes del renglón 10). extraer_pdf_completo la pega al
+    final de la descripción del último ítem de la página anterior; sin
+    esto, ese texto se perdía en silencio."""
     palabras = page.extract_words()
     filas = []
+    continuacion = []
+    vio_item = False
     for top, bottom in bandas_de_filas(page):
         en_banda = [w for w in palabras if top - 0.5 <= w["top"] < bottom - 0.5]
         if not en_banda:
@@ -97,9 +109,13 @@ def extraer_filas_pagina(page):
 
         rg_texto = "".join(w["text"] for w in rg_palabras)
         if not rg_texto.isdigit():
+            if not vio_item and desc_palabras:
+                desc_palabras.sort(key=lambda w: (round(w["top"], 1), w["x0"]))
+                continuacion.append(" ".join(w["text"] for w in desc_palabras))
             # No es una fila de item real (encabezado de columnas, fila
             # de "Total", etc.)
             continue
+        vio_item = True
 
         codigo = "".join(w["text"] for w in codigo_palabras)
         desc_palabras.sort(key=lambda w: (round(w["top"], 1), w["x0"]))
@@ -118,7 +134,7 @@ def extraer_filas_pagina(page):
                 "cantidad": cantidad,
             }
         )
-    return filas
+    return filas, " ".join(continuacion)
 
 
 def extraer_pdf_completo(pdf_path: Path):
@@ -129,7 +145,10 @@ def extraer_pdf_completo(pdf_path: Path):
     with pdfplumber.open(pdf_path) as pdf:
         filas = []
         for page in pdf.pages:
-            filas.extend(extraer_filas_pagina(page))
+            filas_pagina, continuacion = extraer_filas_pagina(page)
+            if continuacion and filas:
+                filas[-1]["descripcion"] = f"{filas[-1]['descripcion']} {continuacion}".strip()
+            filas.extend(filas_pagina)
     return filas
 
 
