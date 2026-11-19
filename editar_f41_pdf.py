@@ -447,12 +447,16 @@ def _generar_overlay_precios(pdf_original_path: Path, filas: list, info: dict, s
     cv.save()
     buffer_overlay.seek(0)
 
-    lector_original = PdfReader(str(pdf_original_path))
+    # Las páginas se clonan DENTRO del writer antes de mergear (en vez de
+    # mergear sobre una página de un PdfReader suelto y recién ahí
+    # agregarla): pypdf 7 sacó el soporte para mergear páginas que todavía
+    # no están asignadas a un writer (confirmado en producción: tiraba
+    # DeprecationError en pypdf 7.0.0, aunque localmente no se veía porque
+    # el venv tenía pypdf 6.20.0 -- requirements.txt no fijaba versión).
+    writer = PdfWriter(clone_from=str(pdf_original_path))
     lector_overlay = PdfReader(buffer_overlay)
-    writer = PdfWriter()
-    for pagina_original, pagina_overlay in zip(lector_original.pages, lector_overlay.pages):
-        pagina_original.merge_page(pagina_overlay)
-        writer.add_page(pagina_original)
+    for pagina_writer, pagina_overlay in zip(writer.pages, lector_overlay.pages):
+        pagina_writer.merge_page(pagina_overlay)
 
     with open(salida, "wb") as f:
         writer.write(f)
