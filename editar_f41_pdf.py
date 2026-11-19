@@ -30,6 +30,8 @@ Se mantiene separado de f41_a_excel.py (que es de extracción/Excel).
 
 import io
 import re
+import sys
+import traceback
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -308,6 +310,28 @@ def _filas_coinciden_con_original(filas: list, items_originales: list) -> bool:
         if not _numeros_iguales(fila.get("cantidad"), original["cantidad"]):
             return False
     return True
+
+
+def _primera_diferencia(filas: list, items_originales: list) -> str:
+    """Diagnóstico para el log: describe el primer campo que hace fallar
+    _filas_coinciden_con_original, para no tener que adivinar por qué una
+    generación cayó a reconstrucción en vez de superposición."""
+    for i, (fila, original) in enumerate(zip(filas, items_originales)):
+        if not isinstance(fila, dict):
+            return f"fila {i + 1}: no es un dict ({fila!r})"
+        campos = [
+            ("rg", _texto(fila.get("rg")), _texto(original["rg"])),
+            ("codigo", _texto(fila.get("codigo")), _texto(original["codigo"])),
+            ("descripcion", _texto(fila.get("descripcion")), _texto(original["descripcion"])),
+        ]
+        for nombre, valor_fila, valor_original in campos:
+            if valor_fila != valor_original:
+                return f"fila {i + 1} ({nombre}): {valor_fila!r} != {valor_original!r}"
+        if not _numeros_iguales(fila.get("cantidad"), original["cantidad"]):
+            return f"fila {i + 1} (cantidad): {fila.get('cantidad')!r} != {original['cantidad']!r}"
+    if len(filas) != len(items_originales):
+        return f"cantidad de filas distinta: {len(filas)} vs {len(items_originales)}"
+    return "no se encontró diferencia (?)"
 
 
 def _mapa_precios_original(pdf_path: Path) -> list:
@@ -610,7 +634,8 @@ def generar_f41_editado(pdf_original_path: Path, filas: list, salida: Path):
     la original) -- ver criterio completo en el docstring del módulo."""
     try:
         items_originales = extraer_pdf_completo(pdf_original_path)
-    except Exception:
+    except Exception as exc:
+        print(f"[f41-editado] Fallo re-extrayendo el original: {exc}", file=sys.stderr, flush=True)
         items_originales = None
 
     if items_originales and _filas_coinciden_con_original(filas, items_originales):
@@ -624,6 +649,14 @@ def generar_f41_editado(pdf_original_path: Path, filas: list, salida: Path):
             # generación entera: se cae al método de reconstrucción, que
             # es más tolerante porque no depende de encontrar posiciones
             # exactas en el original.
-            pass
+            print("[f41-editado] Falló la superposición, cae a reconstrucción:", file=sys.stderr, flush=True)
+            traceback.print_exc(file=sys.stderr)
+    elif items_originales:
+        print(
+            f"[f41-editado] Los renglones no coinciden con el original "
+            f"({len(filas)} filas vs {len(items_originales)} originales) -- usa reconstrucción. "
+            f"{_primera_diferencia(filas, items_originales)}",
+            file=sys.stderr, flush=True,
+        )
 
     _generar_reconstruccion(pdf_original_path, filas, salida)
